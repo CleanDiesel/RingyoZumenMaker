@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 256 256"
+   version="1.1"
+   id="svg6"
+   sodipodi:docname="icon.svg"
+   inkscape:version="1.4 (86a8ad7, 2024-10-11)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview6"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="4.270262"
+     inkscape:cx="131.37367"
+     inkscape:cy="54.680485"
+     inkscape:window-width="1920"
+     inkscape:window-height="991"
+     inkscape:window-x="-9"
+     inkscape:window-y="-9"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg6" />
+  <defs
+     id="defs2">
+    <clipPath
+       id="clip">
+      <rect
+         x="12"
+         y="12"
+         width="232"
+         height="232"
+         rx="44"
+         id="rect1" />
+    </clipPath>
+    <linearGradient
+       id="darkGreen"
+       x1="0"
+       y1="0"
+       x2="1"
+       y2="1">
+      <stop
+         offset="0%"
+         stop-color="#075234"
+         id="stop1" />
+      <stop
+         offset="100%"
+         stop-color="#002817"
+         id="stop2" />
+    </linearGradient>
+    <filter
+       id="shadow"
+       x="0"
+       y="0"
+       width="1"
+       height="1">
+      <feDropShadow
+         dx="0"
+         dy="8"
+         stdDeviation="8"
+         flood-color="#000000"
+         flood-opacity="0.22" />
+    </filter>
+  </defs>
+  <!-- outer body -->
+  <rect
+     x="12"
+     y="12"
+     width="232"
+     height="232"
+     rx="44"
+     fill="#ffffff"
+     filter="url(#shadow)"
+     id="rect2" />
+  <g
+     clip-path="url(#clip)"
+     id="g6">
+    <!-- diagonal color split -->
+    <rect
+       x="12"
+       y="12"
+       width="232"
+       height="232"
+       fill="url(#darkGreen)"
+       id="rect3" />
+    <path
+       d="M170 12 H244 V244 H84 Z"
+       fill="#f7faf4"
+       id="path3" />
+    <!-- diagonal edge -->
+    <path
+       d="M170 12 L84 244"
+       stroke="#ffffff"
+       stroke-width="8"
+       stroke-linecap="round"
+       id="path4" />
+    <!-- F letter -->
+    <text
+       x="54"
+       y="180"
+       fill="#ffffff"
+       font-family="Arial Black, Impact, sans-serif"
+       font-size="150"
+       font-weight="900"
+       letter-spacing="-6"
+       id="text4">F</text>
+    <!-- small forestry/map accent -->
+  </g>
+  <!-- rim -->
+  <rect
+     x="12"
+     y="12"
+     width="232"
+     height="232"
+     rx="44"
+     fill="none"
+     stroke="#073f28"
+     stroke-width="6"
+     id="rect6" />
+</svg>

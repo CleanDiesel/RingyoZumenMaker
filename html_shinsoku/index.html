@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>sample</title>
+  <link rel="stylesheet" href="asset/index.css">
+</head>
+<body>
+  <div id="main_container">
+    <h1>実測図</h1>
+    <div id="zumen_select" class="print_hide">
+      <select id="zumen_type">
+        <option value="">図面を選択</option>
+      </select>
+    </div>
+    <div id="info_container">
+      <div id="jissokudate">
+        <div class="description">実測年月日</div>
+        <div class="value" id="sokuryobi"></div>
+      </div>
+      <div id="jissokusya">
+        <div class="description">実測者氏名</div>
+        <div class="value">
+          <div class="value1" id="sokuryojigyosha">
+          </div>
+          <div class="value2" id="sokuryosha">
+          </div>
+        </div>
+      </div>
+      <div id="seizudate">
+        <div class="description">製図年月日</div>
+        <div class="value" id="seizubi"></div>
+      </div>
+      <div id="seizusya">
+        <div class="description">製図者氏名</div>
+        <div class="value">
+          <div class="value1" id="seizujigyosha">
+          </div>
+          <div class="value2" id="seizusha">
+          </div>
+        </div>
+      </div>
+      <div id="location">
+        <div class="value">
+          <div class="value1" id="sanrinshoyusha">
+          </div>
+          <div class="value2" id="rinshohan">
+          </div>
+          <!-- <div class="value3" id="haisui_name">
+          </div> -->
+        </div>
+      </div>
+    </div>
+    <div id="sub_container">
+      <div id="xy_container">
+        <dl id="detail">
+          <div data-option-panel="shui mix">
+            <dt class="description">外周全長</dt>
+            <dd class="value"><span id="shui_length"></span>m</dd>
+          </div>
+          <!-- <div>
+            <dt class="description">延長</dt>
+            <dd class="value"><span></span>m</dd>
+          </div> -->
+          <div data-option-panel="shui mix">
+            <dt class="description">面積</dt>
+            <dd class="value"><span id="area"></span>m<sup>2</sup></dd>
+          </div>
+          <!-- <div>
+            <dt class="description">幅</dt>
+            <dd class="value"><span></span>m</dd>
+          </div> -->
+          <div>
+            <dt class="description">測地系</dt>
+            <dd class="value" id="crs"></dd>
+          </div>
+          <div>
+            <dt class="description">磁北補正</dt>
+            <dd class="value"><span id="magnetic_correction"></span>°</dd>
+          </div>
+        </dl>
+        <div id="xy_updown" class="print_hide" hidden>
+          <button type="button" id="xy_prev">▲</button>
+          <button type="button" id="xy_next">▼</button>
+        </div>
+      </div>
+      <div id="map_container">
+        <div id="map_detail">
+          <dl>
+            <div id="area2_" data-option-panel="shui mix">
+              <dt class="description">面積&nbsp;</dt>
+              <dd class="value"><span id="area2"></span>m<sup>2</sup></dd>
+            </div>
+            <!-- <div>
+              <dt class="description">延長&nbsp;</dt>
+              <dd class="value">
+                m</dd>
+            </div> -->
+            <div id="scale_">
+                <dt class="description">縮尺&nbsp;</dt>
+              <dd class="value" id="scale"></dd>
+            </div>
+          </dl>
+        </div>
+        <div id="map">
+          <img src="asset/houi.svg" alt="" id="houi">
+          <!-- <img src="asset/shui_map.png" alt="" class="main_map" data-option-panel="shui"> -->
+          <!-- <img src="asset/haisui_map.png" alt="" class="main_map" data-option-panel="haisui"> -->
+          <!-- <img src="asset/mix_map.png" alt="" class="main_map" data-option-panel="mix"> -->
+        </div>
+        <div id="calc" data-option-panel="mix">
+          <div id="calc_distance">
+            <div id="calc_distance_haisuikou">
+              ：<p></p>
+            </div>
+            <div id="calc_distance_jochi">
+              除地：<p></p>
+            </div>
+          </div>
+          <div id="calc_area">
+            <div id="box1"></div>
+            <div id="box2"></div>
+            <div id="box3">除地：</div>
+            <div id="box4"></div>
+            <div id="box5"></div>
+            <div id="box6">面積：</div>
+            <div id="box7"></div>
+            <div id="box8"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    (() => {
+      const select = document.getElementById("zumen_type");
+      const panels = document.querySelectorAll("[data-option-panel]");
+      const xyUpdown = document.getElementById("xy_updown");
+      const xyPrev = document.getElementById("xy_prev");
+      const xyNext = document.getElementById("xy_next");
+      const xyTables = Array.from(document.querySelectorAll("[data-xy-table]"));
+      const calc = document.getElementById("calc");
+      const baseTitle = document.title;
+      let currentXyIndex = 0;
+
+      if (!select) {
+        return;
+      }
+
+      const panelValues = (panel) => (
+        panel.dataset.optionPanel || ""
+      ).split(/\s+/).filter(Boolean);
+
+      const updatePanels = () => {
+        const selectedValue = select.value;
+        const optionValues = new Set(
+          Array.from(select.options).map((option) => option.value)
+        );
+
+        panels.forEach((panel) => {
+          if (panel.id === "calc" && panel.dataset.isJochiKeisan !== "1") {
+            panel.hidden = true;
+            return;
+          }
+          const values = panelValues(panel);
+          const hasOption = values.some((value) => optionValues.has(value));
+          panel.hidden = !hasOption || !values.includes(selectedValue);
+        });
+      };
+
+      const updateXyTables = () => {
+        const selectedValue = select.value;
+        const activeXyTables = xyTables.filter((table) => (
+          panelValues(table).includes(selectedValue)
+        ));
+
+        if (activeXyTables.length === 0) {
+          if (xyUpdown) {
+            xyUpdown.hidden = true;
+          }
+          xyTables.forEach((table) => {
+            table.hidden = true;
+          });
+          return;
+        }
+
+        if (currentXyIndex >= activeXyTables.length) {
+          currentXyIndex = 0;
+        }
+
+        xyTables.forEach((table, index) => {
+          table.hidden = true;
+        });
+
+        activeXyTables.forEach((table, index) => {
+          table.hidden = index !== currentXyIndex;
+        });
+
+        if (xyUpdown) {
+          xyUpdown.hidden = activeXyTables.length <= 1;
+        }
+      };
+
+      const updateTitle = () => {
+        const selectedOption = select.options[select.selectedIndex];
+        if (!selectedOption || !select.value) {
+          document.title = baseTitle;
+          return;
+        }
+
+        document.title = `${baseTitle.replace(/\s*-\s*実測図\s*$/, "")} - ${selectedOption.textContent.trim()} - 実測図`;
+      };
+
+      if (xyPrev) {
+        xyPrev.addEventListener("click", () => {
+          const activeXyTables = xyTables.filter((table) => (
+            panelValues(table).includes(select.value)
+          ));
+
+          if (activeXyTables.length === 0) {
+            return;
+          }
+
+          currentXyIndex = (currentXyIndex - 1 + activeXyTables.length) % activeXyTables.length;
+          updateXyTables();
+        });
+      }
+
+      if (xyNext) {
+        xyNext.addEventListener("click", () => {
+          const activeXyTables = xyTables.filter((table) => (
+            panelValues(table).includes(select.value)
+          ));
+
+          if (activeXyTables.length === 0) {
+            return;
+          }
+
+          currentXyIndex = (currentXyIndex + 1) % activeXyTables.length;
+          updateXyTables();
+        });
+      }
+
+      select.addEventListener("change", () => {
+        currentXyIndex = 0;
+        updatePanels();
+        updateXyTables();
+        updateTitle();
+      });
+
+      const toNumber = (value) => {
+        const num = Number(value);
+        return Number.isFinite(num) ? num : 0;
+      };
+
+      const escapeHtml = (value) => String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+      const formatLength = (value) => toNumber(value).toFixed(1);
+      const formatAreaInt = (value) => String(Math.round(toNumber(value)));
+
+      const renderCalc = () => {
+        if (!calc) {
+          return;
+        }
+
+        if (calc.dataset.isJochiKeisan !== "1") {
+          calc.hidden = true;
+          return;
+        }
+
+        let items = [];
+        try {
+          items = JSON.parse(calc.dataset.haisuiItems || "[]");
+        } catch (_) {
+          items = [];
+        }
+
+        const typeText = (calc.dataset.haisuiType || "").trim();
+        const areaValue = toNumber((document.getElementById("area") || {}).textContent);
+        const allDistance = items.reduce((sum, item) => sum + toNumber(item.length), 0);
+        const jochiItems = items.filter((item) => item.is_jochi);
+        const jochiDistance = jochiItems.reduce((sum, item) => sum + toNumber(item.length), 0);
+        const areaTerms = jochiItems.map((item) => `${escapeHtml(item.name)} ${formatLength(item.length)}*${formatLength(item.haba)}`);
+        const areaDeduction = jochiItems.reduce((sum, item) => (
+          sum + (toNumber(item.length) * toNumber(item.haba))
+        ), 0);
+        const areaDiff = Math.round(areaValue) - Math.round(areaDeduction);
+
+        const setHtml = (id, html) => {
+          const elem = document.getElementById(id);
+          if (elem) {
+            elem.innerHTML = html;
+          }
+        };
+
+        const allTerms = items.map((item) => `${escapeHtml(item.name)} ${formatLength(item.length)}m`);
+        const jochiTerms = jochiItems.map((item) => `${escapeHtml(item.name)} ${formatLength(item.length)}m`);
+
+        setHtml(
+          "calc_distance_haisuikou",
+          `${escapeHtml(typeText)}：<p>${allTerms.join(" + ")} = ${formatLength(allDistance)}m</p>`
+        );
+        setHtml(
+          "calc_distance_jochi",
+          `除地：<p>${jochiTerms.join(" + ")} = ${formatLength(jochiDistance)}m</p>`
+        );
+        setHtml("box1", `${escapeHtml(typeText)}：`);
+        setHtml("box2", `${formatLength(allDistance)}m`);
+        setHtml("box4", `${areaTerms.join(" + ")} = ${formatAreaInt(areaDeduction)}m<sup>2</sup>`);
+        setHtml("box5", `≒ ${formatAreaInt(areaDeduction)}m<sup>2</sup>`);
+        setHtml("box7", `${formatAreaInt(areaValue)}m<sup>2</sup> - ${formatAreaInt(areaDeduction)}m<sup>2</sup>`);
+        setHtml("box8", `= ${formatAreaInt(areaDiff)}m<sup>2</sup>`);
+      };
+
+      updatePanels();
+      renderCalc();
+      updateXyTables();
+      updateTitle();
+    })();
+  </script>
+</body>
+</html>

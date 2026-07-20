@@ -1,0 +1,9 @@
+[general]
+name=Ringyo Zumen Maker
+description=Need to replace fox
+version=0.1
+author=Sonehara Takahiro
+email=m48c7e72a7vrb6w23yw@gmail.com
+qgisMinimumVersion=4.0
+category=Plugins
+icon=icon.svg
