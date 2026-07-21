@@ -248,21 +248,6 @@
         updateTitle();
       });
 
-      const toNumber = (value) => {
-        const num = Number(value);
-        return Number.isFinite(num) ? num : 0;
-      };
-
-      const escapeHtml = (value) => String(value ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
-
-      const formatLength = (value) => toNumber(value).toFixed(1);
-      const formatAreaInt = (value) => String(Math.round(toNumber(value)));
-
       const renderCalc = () => {
         if (!calc) {
           return;
@@ -270,51 +255,7 @@
 
         if (calc.dataset.isJochiKeisan !== "1") {
           calc.hidden = true;
-          return;
         }
-
-        let items = [];
-        try {
-          items = JSON.parse(calc.dataset.haisuiItems || "[]");
-        } catch (_) {
-          items = [];
-        }
-
-        const typeText = (calc.dataset.haisuiType || "").trim();
-        const areaValue = toNumber((document.getElementById("area") || {}).textContent);
-        const allDistance = items.reduce((sum, item) => sum + toNumber(item.length), 0);
-        const jochiItems = items.filter((item) => item.is_jochi);
-        const jochiDistance = jochiItems.reduce((sum, item) => sum + toNumber(item.length), 0);
-        const areaTerms = jochiItems.map((item) => `${escapeHtml(item.name)} ${formatLength(item.length)}*${formatLength(item.haba)}`);
-        const areaDeduction = jochiItems.reduce((sum, item) => (
-          sum + (toNumber(item.length) * toNumber(item.haba))
-        ), 0);
-        const areaDiff = Math.round(areaValue) - Math.round(areaDeduction);
-
-        const setHtml = (id, html) => {
-          const elem = document.getElementById(id);
-          if (elem) {
-            elem.innerHTML = html;
-          }
-        };
-
-        const allTerms = items.map((item) => `${escapeHtml(item.name)} ${formatLength(item.length)}m`);
-        const jochiTerms = jochiItems.map((item) => `${escapeHtml(item.name)} ${formatLength(item.length)}m`);
-
-        setHtml(
-          "calc_distance_haisuikou",
-          `${escapeHtml(typeText)}：<p>${allTerms.join(" + ")} = ${formatLength(allDistance)}m</p>`
-        );
-        setHtml(
-          "calc_distance_jochi",
-          `除地：<p>${jochiTerms.join(" + ")} = ${formatLength(jochiDistance)}m</p>`
-        );
-        setHtml("box1", `${escapeHtml(typeText)}：`);
-        setHtml("box2", `${formatLength(allDistance)}m`);
-        setHtml("box4", `${areaTerms.join(" + ")} = ${formatAreaInt(areaDeduction)}m<sup>2</sup>`);
-        setHtml("box5", `≒ ${formatAreaInt(areaDeduction)}m<sup>2</sup>`);
-        setHtml("box7", `${formatAreaInt(areaValue)}m<sup>2</sup> - ${formatAreaInt(areaDeduction)}m<sup>2</sup>`);
-        setHtml("box8", `= ${formatAreaInt(areaDiff)}m<sup>2</sup>`);
       };
 
       updatePanels();

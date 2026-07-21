@@ -1,0 +1,217 @@
+body, body * {
+    margin: 0;
+    box-sizing: border-box;
+}
+[hidden] {
+    display: none !important;
+}
+h1 {
+    text-align: center;
+    font-size: 7mm;
+    font-family: 'Yu Mincho', 'serif';
+    padding-top: 15mm;
+}
+#zumen_select {
+    position: absolute;
+    top: 15mm;
+    left: 30mm;
+}
+#main_container {
+    width: 297mm;
+    height: 210mm;
+}
+#info_container {
+    width: 240mm;
+    height: 17mm;
+    font-family: 'Yu Mincho', 'serif';
+    display: grid;
+    grid-template-columns: 32mm 48mm 32mm 48mm auto;
+    font-size: 3mm;
+    font-family: 'Yu Mincho', 'serif';
+    border: .7mm solid black;
+    margin: 0 auto;
+}
+#info_container > div {
+    border-right: .4mm solid black;
+    display: flex;
+    flex-direction: column;
+}
+#info_container > div:last-child {
+    border-right: none;
+}
+#info_container .value {
+    text-align: center;
+    height: auto;
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+}
+#sub_container {
+    width: 240mm;
+    height: 158mm;
+    margin: 3mm auto 0;
+    display: flex;
+    justify-content: space-between;
+    font-family: 'Yu Gothic', 'sans-serif';
+    font-size: 3.5mm;
+}
+#xy_container {
+    position: relative;
+    width: 71mm;
+    height: 100%;
+    border: .7mm solid black;
+    display: flex;
+    flex-direction: column;
+    padding: 2mm;
+}
+#map_container {
+    width: 160mm;
+    height: 100%;
+    border: .7mm solid black;
+    padding: 4mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: relative;
+}
+#detail {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    flex-wrap: wrap;
+}
+#detail > div {
+    width: 45%;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+}
+#xy_table,
+.xy_table {
+    margin-top: 2mm;
+    font-size: smaller;
+    border-spacing: 0;
+}
+#xy_table td,
+.xy_table td {
+    text-align: center;
+}
+#map_detail {
+  display: flex;
+  justify-content: flex-end;
+}
+#map_detail dl {
+  display: flex;
+  width: 50%;
+  justify-content: space-between;
+  flex-direction: row-reverse;
+}
+#map_detail dl div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+#calc {
+  border: .7mm solid black;
+  width: 130mm;
+  margin: 0 auto;
+  height: 40mm;
+  display: flex;
+}
+#calc > div {
+  padding: 2mm;
+}
+#calc_distance {
+  width: 60%;
+  border-right: .7mm solid black;
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+}
+#calc_area {
+  width: 40%;
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  grid-template-rows: repeat(5, 1fr);
+  grid-template-areas:
+    "box1 box2"
+    "box3 box4"
+    ". box5"
+    "box6 box7"
+    ". box8";
+}
+#box1 {
+  grid-area: box1;
+}
+#box2 {
+  grid-area: box2;
+}
+#box3 {
+  grid-area: box3;
+}
+#box4 {
+  grid-area: box4;
+}
+#box5 {
+  grid-area: box5;
+}
+#box6 {
+  grid-area: box6;
+}
+#box7 {
+  grid-area: box7;
+}
+#box8 {
+  grid-area: box8;
+}
+#box2, #box4, #box5, #box7, #box8 {
+  text-align: right;
+}
+#map {
+  flex: 1;
+}
+#houi {
+  position: absolute;
+  top: 5mm;
+  left: 5mm;
+  width: 13mm;
+}
+.main_map {
+  position: absolute;
+  top: 5mm;
+  left: 5mm;
+  width: 150mm;
+  height: 150mm;
+  z-index: -1;
+}
+@page {
+    size: A4 landscape;
+    margin: 0;
+}
+#scale_ .value div {
+  justify-content: center;
+}
+#area2_ .value > div {
+  flex-direction: column;
+}
+#area2_ .value {
+  display: flex;
+  align-items: center;
+}
+@media print {
+    .print_hide {
+        display: none;
+    }
+}
+#xy_updown {
+  position: absolute;
+  top: 50%;
+  left: -20mm;
+  transform: translateY(-50%);
+}
+#xy_updown button {
+  display: block;
+  width: 15mm;
+  height: 10mm;
+  margin: 2mm 0;
+}

@@ -17,7 +17,7 @@
    </sizepolicy>
   </property>
   <property name="windowTitle">
-   <string>林業図面作成プラグイン</string>
+   <string>RingyoZumenMaker</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_3">
    <item>
@@ -164,38 +164,38 @@
             </property>
            </widget>
           </item>
-          <item row="0" column="1">
-           <widget class="QgsScaleWidget" name="scale">
-            <property name="showCurrentScaleButton">
-             <bool>true</bool>
-            </property>
-           </widget>
-          </item>
           <item row="2" column="0">
-           <widget class="QLabel" name="qgisLabel">
+           <widget class="QLabel" name="label_25">
             <property name="text">
-             <string/>
+             <string>排水・林内路網等種別</string>
             </property>
            </widget>
           </item>
           <item row="2" column="1">
-           <widget class="QCheckBox" name="isJochikeisan">
-            <property name="text">
-             <string>排水・林内路網の除地計算を表示</string>
-            </property>
-           </widget>
-          </item>
-          <item row="1" column="1">
            <widget class="QLineEdit" name="haisuiType">
             <property name="text">
              <string>排水</string>
             </property>
            </widget>
           </item>
-          <item row="1" column="0">
-           <widget class="QLabel" name="label_25">
+          <item row="3" column="0">
+           <widget class="QLabel" name="qgisLabel">
             <property name="text">
-             <string>排水・林内路網等種別</string>
+             <string/>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="1">
+           <widget class="QCheckBox" name="isJochikeisan">
+            <property name="text">
+             <string>排水・林内路網の除地計算を表示</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QgsScaleWidget" name="scale">
+            <property name="showCurrentScaleButton">
+             <bool>true</bool>
             </property>
            </widget>
           </item>
@@ -205,7 +205,7 @@
        <item>
         <widget class="QGroupBox" name="groupBox_7">
          <property name="enabled">
-          <bool>false</bool>
+          <bool>true</bool>
          </property>
          <property name="title">
           <string>表</string>
@@ -220,6 +220,9 @@
           </item>
           <item row="0" column="1">
            <widget class="QSpinBox" name="ketasu">
+            <property name="maximum">
+             <number>9</number>
+            </property>
             <property name="value">
              <number>5</number>
             </property>
@@ -361,81 +364,6 @@
             </widget>
            </item>
            <item>
-            <widget class="QGroupBox" name="groupBox_8">
-             <property name="title">
-              <string>標高指定</string>
-             </property>
-             <layout class="QGridLayout" name="gridLayout_8">
-              <item row="0" column="0">
-               <layout class="QGridLayout" name="gridLayout">
-                <item row="2" column="0">
-                 <widget class="QLabel" name="label_9">
-                  <property name="text">
-                   <string>標高フィールド（フィールドの型：int または float, 単位：m）</string>
-                  </property>
-                 </widget>
-                </item>
-                <item row="2" column="1">
-                 <widget class="QgsFieldComboBox" name="shui_hyokoField">
-                  <property name="enabled">
-                   <bool>false</bool>
-                  </property>
-                 </widget>
-                </item>
-                <item row="3" column="0">
-                 <widget class="QLabel" name="label_16">
-                  <property name="text">
-                   <string>DEMレイヤ</string>
-                  </property>
-                 </widget>
-                </item>
-                <item row="3" column="1">
-                 <widget class="QgsMapLayerComboBox" name="shui_demLayer">
-                  <property name="enabled">
-                   <bool>false</bool>
-                  </property>
-                 </widget>
-                </item>
-                <item row="1" column="0" colspan="2">
-                 <layout class="QHBoxLayout" name="horizontalLayout_4">
-                  <item>
-                   <widget class="QRadioButton" name="shui_noHyoko">
-                    <property name="text">
-                     <string>標高を用いない</string>
-                    </property>
-                    <property name="checked">
-                     <bool>true</bool>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QRadioButton" name="shui_pointHyoko">
-                    <property name="text">
-                     <string>ポイントレイヤのフィールドを使用</string>
-                    </property>
-                    <property name="checked">
-                     <bool>false</bool>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QRadioButton" name="shui_demHyoko">
-                    <property name="enabled">
-                     <bool>true</bool>
-                    </property>
-                    <property name="text">
-                     <string>DEMレイヤを使用</string>
-                    </property>
-                   </widget>
-                  </item>
-                 </layout>
-                </item>
-               </layout>
-              </item>
-             </layout>
-            </widget>
-           </item>
-           <item>
             <widget class="QGroupBox" name="groupBox_2">
              <property name="title">
               <string>使用する属性</string>
@@ -518,6 +446,13 @@
           </property>
           <layout class="QVBoxLayout" name="verticalLayout_12">
            <item>
+            <widget class="QPushButton" name="haisui_add">
+             <property name="text">
+              <string>排水を追加</string>
+             </property>
+            </widget>
+           </item>
+           <item>
             <widget class="QToolBox" name="toolBox">
              <property name="currentIndex">
               <number>0</number>
@@ -526,9 +461,9 @@
               <property name="geometry">
                <rect>
                 <x>0</x>
-                <y>-75</y>
-                <width>597</width>
-                <height>482</height>
+                <y>0</y>
+                <width>609</width>
+                <height>407</height>
                </rect>
               </property>
               <attribute name="label">
@@ -597,75 +532,6 @@
                 </widget>
                </item>
                <item row="4" column="0" colspan="2">
-                <widget class="QGroupBox" name="groupBox_9">
-                 <property name="title">
-                  <string>標高指定</string>
-                 </property>
-                 <layout class="QGridLayout" name="gridLayout_4">
-                  <item row="0" column="0">
-                   <layout class="QGridLayout" name="gridLayout_7">
-                    <item row="3" column="0">
-                     <widget class="QLabel" name="label_27">
-                      <property name="text">
-                       <string>DEMレイヤ</string>
-                      </property>
-                     </widget>
-                    </item>
-                    <item row="2" column="1" colspan="2">
-                     <widget class="QgsFieldComboBox" name="haisui_hyokoField_1">
-                      <property name="enabled">
-                       <bool>false</bool>
-                      </property>
-                     </widget>
-                    </item>
-                    <item row="2" column="0">
-                     <widget class="QLabel" name="label_26">
-                      <property name="text">
-                       <string>標高フィールド（フィールドの型：int または float, 単位：m）</string>
-                      </property>
-                     </widget>
-                    </item>
-                    <item row="3" column="1" colspan="2">
-                     <widget class="QgsMapLayerComboBox" name="haisui_demLayer_1">
-                      <property name="enabled">
-                       <bool>false</bool>
-                      </property>
-                     </widget>
-                    </item>
-                    <item row="1" column="0" colspan="3">
-                     <layout class="QHBoxLayout" name="horizontalLayout_3">
-                      <item>
-                       <widget class="QRadioButton" name="haisui_noHyoko_1">
-                        <property name="text">
-                         <string>標高を用いない</string>
-                        </property>
-                        <property name="checked">
-                         <bool>true</bool>
-                        </property>
-                       </widget>
-                      </item>
-                      <item>
-                       <widget class="QRadioButton" name="haisui_pointHyoko_1">
-                        <property name="text">
-                         <string>ポイントレイヤのフィールドを使用</string>
-                        </property>
-                       </widget>
-                      </item>
-                      <item>
-                       <widget class="QRadioButton" name="haisui_demHyoko_1">
-                        <property name="text">
-                         <string>DEMレイヤを使用</string>
-                        </property>
-                       </widget>
-                      </item>
-                     </layout>
-                    </item>
-                   </layout>
-                  </item>
-                 </layout>
-                </widget>
-               </item>
-               <item row="5" column="0" colspan="2">
                 <widget class="QGroupBox" name="groupBox_4">
                  <property name="title">
                   <string>使用する属性</string>
@@ -698,7 +564,7 @@
                  </layout>
                 </widget>
                </item>
-               <item row="7" column="0" colspan="2">
+               <item row="6" column="0" colspan="2">
                 <widget class="QPushButton" name="haisui_del_1">
                  <property name="text">
                   <string>削除</string>
@@ -707,13 +573,6 @@
                </item>
               </layout>
              </widget>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="haisui_add">
-             <property name="text">
-              <string>排水を追加</string>
-             </property>
             </widget>
            </item>
           </layout>
@@ -758,14 +617,33 @@
         </layout>
        </item>
        <item>
-        <spacer name="verticalSpacer_6">
+        <widget class="QGroupBox" name="groupBox_8">
+         <property name="title">
+          <string>出力</string>
+         </property>
+         <layout class="QVBoxLayout" name="verticalLayout_13">
+          <item>
+           <widget class="QTextBrowser" name="outputlog">
+            <property name="acceptRichText">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_4">
          <property name="orientation">
           <enum>Qt::Orientation::Vertical</enum>
+         </property>
+         <property name="sizeType">
+          <enum>QSizePolicy::Policy::Maximum</enum>
          </property>
          <property name="sizeHint" stdset="0">
           <size>
            <width>20</width>
-           <height>40</height>
+           <height>20</height>
           </size>
          </property>
         </spacer>
@@ -783,6 +661,13 @@
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout_2">
+     <item>
+      <widget class="QPushButton" name="testcalc_bt">
+       <property name="text">
+        <string>試算</string>
+       </property>
+      </widget>
+     </item>
      <item>
       <widget class="QPushButton" name="submit_bt">
        <property name="text">
@@ -802,11 +687,6 @@
   </layout>
  </widget>
  <customwidgets>
-  <customwidget>
-   <class>QgsFieldComboBox</class>
-   <extends>QComboBox</extends>
-   <header>qgsfieldcombobox.h</header>
-  </customwidget>
   <customwidget>
    <class>QgsFieldExpressionWidget</class>
    <extends>QWidget</extends>
@@ -845,114 +725,14 @@
   <tabstop>jihosei</tabstop>
   <tabstop>isShui</tabstop>
   <tabstop>shui_point</tabstop>
-  <tabstop>shui_hyokoField</tabstop>
-  <tabstop>shui_demLayer</tabstop>
   <tabstop>isHaisui</tabstop>
   <tabstop>scrollArea</tabstop>
   <tabstop>haisui_point_1</tabstop>
-  <tabstop>haisui_hyokoField_1</tabstop>
-  <tabstop>haisui_demLayer_1</tabstop>
   <tabstop>haisui_add</tabstop>
   <tabstop>submit_bt</tabstop>
  </tabstops>
  <resources/>
  <connections>
-  <connection>
-   <sender>shui_point</sender>
-   <signal>layerChanged(QgsMapLayer*)</signal>
-   <receiver>shui_hyokoField</receiver>
-   <slot>setLayer(QgsMapLayer*)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>322</x>
-     <y>127</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>627</x>
-     <y>274</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>haisui_point_1</sender>
-   <signal>layerChanged(QgsMapLayer*)</signal>
-   <receiver>haisui_hyokoField_1</receiver>
-   <slot>setLayer(QgsMapLayer*)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>377</x>
-     <y>172</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>604</x>
-     <y>292</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>shui_pointHyoko</sender>
-   <signal>toggled(bool)</signal>
-   <receiver>shui_hyokoField</receiver>
-   <slot>setEnabled(bool)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>430</x>
-     <y>241</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>627</x>
-     <y>274</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>shui_demHyoko</sender>
-   <signal>toggled(bool)</signal>
-   <receiver>shui_demLayer</receiver>
-   <slot>setEnabled(bool)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>626</x>
-     <y>241</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>627</x>
-     <y>306</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>haisui_pointHyoko_1</sender>
-   <signal>toggled(bool)</signal>
-   <receiver>haisui_hyokoField_1</receiver>
-   <slot>setEnabled(bool)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>419</x>
-     <y>259</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>604</x>
-     <y>292</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>haisui_demHyoko_1</sender>
-   <signal>toggled(bool)</signal>
-   <receiver>haisui_demLayer_1</receiver>
-   <slot>setEnabled(bool)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>503</x>
-     <y>259</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>496</x>
-     <y>323</y>
-    </hint>
-   </hints>
-  </connection>
   <connection>
    <sender>shui_point</sender>
    <signal>layerChanged(QgsMapLayer*)</signal>
@@ -964,8 +744,8 @@
      <y>123</y>
     </hint>
     <hint type="destinationlabel">
-     <x>255</x>
-     <y>363</y>
+     <x>344</x>
+     <y>242</y>
     </hint>
    </hints>
   </connection>
@@ -980,8 +760,8 @@
      <y>113</y>
     </hint>
     <hint type="destinationlabel">
-     <x>214</x>
-     <y>395</y>
+     <x>303</x>
+     <y>274</y>
     </hint>
    </hints>
   </connection>
@@ -992,8 +772,8 @@
    <slot>setLayer(QgsMapLayer*)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>264</x>
-     <y>167</y>
+     <x>422</x>
+     <y>294</y>
     </hint>
     <hint type="destinationlabel">
      <x>361</x>
@@ -1008,8 +788,8 @@
    <slot>setLayer(QgsMapLayer*)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>217</x>
-     <y>169</y>
+     <x>375</x>
+     <y>294</y>
     </hint>
     <hint type="destinationlabel">
      <x>254</x>
@@ -1046,6 +826,22 @@
     <hint type="destinationlabel">
      <x>90</x>
      <y>80</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>submit_bt</sender>
+   <signal>released()</signal>
+   <receiver>outputlog</receiver>
+   <slot>show()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>336</x>
+     <y>627</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>335</x>
+     <y>316</y>
     </hint>
    </hints>
   </connection>

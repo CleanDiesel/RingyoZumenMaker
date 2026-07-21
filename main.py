@@ -20,8 +20,8 @@ from lxml import etree as ET
 from pathlib import Path
 import processing
 from html import escape
+import math
 import shutil
-import json
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), "main_dialog.ui"))
 
@@ -57,7 +57,11 @@ class Main(QDockWidget, FORM_CLASS):
         self.xy_table_rows = []
 
         self.submit_bt.clicked.connect(
-            self.on_submit
+            lambda: self.on_submit(test=False)
+        )
+
+        self.testcalc_bt.clicked.connect(
+            lambda: self.on_submit(test=True)
         )
 
         self.setup_haisui_toolbox()
@@ -71,7 +75,10 @@ class Main(QDockWidget, FORM_CLASS):
         self.tabWidget.updateGeometry()
         tab_scroll_area.updateGeometry()
 
-    def on_submit(self):
+    def on_submit(self, test=False):
+        self.open_output_tab()
+        self.clear_output_log()
+
         if self.validate_inputs():
             self.save_settings()
 
@@ -86,6 +93,12 @@ class Main(QDockWidget, FORM_CLASS):
             if not self.map_make():
                 self.progressBar.setValue(0)
                 return
+            
+            if test:
+                self.make_html(write_file=False)
+                self.progressBar.setValue(100)
+                return
+            
             self.progressBar.setValue(60)
 
             if not self.copy_assets():
@@ -95,6 +108,9 @@ class Main(QDockWidget, FORM_CLASS):
 
             self.make_html()
             self.progressBar.setValue(100)
+
+    def open_output_tab(self):
+        self.tabWidget.setCurrentWidget(self.tab_5)
 
     def get_shui_values(self):
         return {
@@ -130,7 +146,7 @@ class Main(QDockWidget, FORM_CLASS):
         settings.setValue(self.settings_key("crs"), self.crs.crs().authid())
         settings.setValue(self.settings_key("jihosei"), self.jihosei.value())
         settings.setValue(self.settings_key("fileName"), self.fileName.filePath())
-        # settings.setValue(self.settings_key("ketasu"), self.ketasu.value())
+        settings.setValue(self.settings_key("ketasu"), self.ketasu.value())
         settings.setValue(self.settings_key("isJochikeisan"), self.isJochikeisan.isChecked())
         settings.setValue(self.settings_key("isShui"), self.isShui.isChecked())
         settings.setValue(self.settings_key("isHaisui"), self.isHaisui.isChecked())
@@ -257,7 +273,7 @@ class Main(QDockWidget, FORM_CLASS):
             if toolbox_index != -1:
                 self.toolBox.setItemText(toolbox_index, str(i))
     
-    def make_html(self):
+    def make_html(self, write_file=True):
         parser = ET.HTMLParser()
         html_path = os.path.join(os.path.dirname(__file__), 'html_shinsoku', 'index.html')
         root = ET.parse(html_path, parser)
@@ -304,12 +320,24 @@ class Main(QDockWidget, FORM_CLASS):
             self.update_zumen_options(root, "mix", "全体")
             self.update_xy_tables(root, self.xy_table_rows, "mix")
             self.add_main_map(root, "mix")
-            if self.isJochikeisan.isChecked():
-                self.add_calc_data(root)
+
+        self.add_calc_data(
+            root,
+            write_to_html=(
+                self.isShui.isChecked()
+                and self.isHaisui.isChecked()
+                and self.isJochikeisan.isChecked()
+            ),
+        )
             
         output_dir = Path(self.fileName.filePath())
         output_path = str(output_dir / "index.html")
         self.clean_html_tree(root)
+        if not write_file:
+            self.append_output_log("試算のためHTMLは書き込みません")
+            return
+
+        self.append_output_log(f"HTMLを書き込みます: {output_path}")
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(ET.tostring(root, pretty_print=True, encoding="unicode", method="html"))
 
@@ -319,25 +347,144 @@ class Main(QDockWidget, FORM_CLASS):
 
         return str(value).replace("\r\n", "\n").replace("\r", "\n")
 
-    def add_calc_data(self, root):
+    def append_output_log(self, message):
+        if hasattr(self, "outputlog"):
+            if not hasattr(self, "output_log_lines"):
+                self.output_log_lines = []
+            self.output_log_lines.append(str(message))
+            self.outputlog.setPlainText("\n".join(self.output_log_lines))
+            scrollbar = self.outputlog.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
+
+    def clear_output_log(self):
+        self.output_log_lines = []
+        if hasattr(self, "outputlog"):
+            self.outputlog.clear()
+
+    def add_calc_data(self, root, write_to_html=True):
         calcs = root.xpath("//*[@id='calc']")
         if not calcs:
             return
 
         calc = calcs[0]
-        calc.set("data-is-jochi-keisan", "1")
-        calc.set("data-haisui-type", self.clean_html_text(self.haisuiType.text()))
+        if write_to_html:
+            calc.set("data-is-jochi-keisan", "1")
 
         items = []
-        for page in self.haisuis:
-            values = page.values()
-            items.append({
-                "name": self.clean_html_text(values.get("name")),
-                "length": 0.0 if page.length is None else float(page.length),
-                "haba": float(values.get("haba") or 0.0),
-                "is_jochi": bool(values.get("is_jochi")),
-            })
-        calc.set("data-haisui-items", json.dumps(items, ensure_ascii=False))
+        if self.isHaisui.isChecked():
+            for page in self.haisuis:
+                values = page.values()
+                items.append({
+                    "name": self.clean_html_text(values.get("name")),
+                    "length": 0.0 if page.length is None else float(page.length),
+                    "haba": float(values.get("haba") or 0.0),
+                    "is_jochi": bool(values.get("is_jochi")),
+                })
+
+        type_text = self.clean_html_text(self.haisuiType.text()).strip()
+        area_value = self.htmlValues.get("area", 0)
+        all_distance = sum(item["length"] for item in items)
+        jochi_items = [item for item in items if item["is_jochi"]]
+        jochi_distance = sum(item["length"] for item in jochi_items)
+        area_deduction = sum(item["length"] * item["haba"] for item in jochi_items)
+        area_diff = round(float(area_value or 0)) - round(area_deduction)
+
+        all_terms = [
+            f"{self.clean_html_text(item['name'])} {self.format_length(item['length'])}m"
+            for item in items
+        ]
+        jochi_terms = [
+            f"{self.clean_html_text(item['name'])} {self.format_length(item['length'])}m"
+            for item in jochi_items
+        ]
+        area_terms = [
+            f"{self.clean_html_text(item['name'])} {self.format_length(item['length'])}*{self.format_length(item['haba'])}"
+            for item in jochi_items
+        ]
+        all_distance_detail = f"{' + '.join(all_terms)} = {self.format_length(all_distance)}m"
+        jochi_distance_detail = f"{' + '.join(jochi_terms)} = {self.format_length(jochi_distance)}m"
+        area_deduction_detail = f"{' + '.join(area_terms)} = {self.format_area_int(area_deduction)}m2"
+        area_diff_detail = (
+            f"{self.format_area_int(area_value)}m2 - "
+            f"{self.format_area_int(area_deduction)}m2 = "
+            f"{self.format_area_int(area_diff)}m2"
+        )
+
+        self.append_output_log(f"周囲外周長: {self.format_length(self.htmlValues.get('shui_length', 0))}m")
+        self.append_output_log(f"周囲面積: {self.format_area_int(area_value)}m2")
+        self.append_output_log(f"{type_text}延長: {all_distance_detail}")
+        self.append_output_log(f"除地延長: {jochi_distance_detail}")
+        self.append_output_log(f"除地面積: {area_deduction_detail}")
+        self.append_output_log(f"差引面積: {area_diff_detail}")
+
+        if write_to_html:
+            self.set_calc_distance(
+                root,
+                "calc_distance_haisuikou",
+                f"{type_text}：",
+                all_distance_detail,
+            )
+            self.set_calc_distance(
+                root,
+                "calc_distance_jochi",
+                "除地：",
+                jochi_distance_detail,
+            )
+            self.set_calc_text(root, "box1", f"{type_text}：")
+            self.set_calc_text(root, "box2", f"{self.format_length(all_distance)}m")
+            self.set_calc_area(root, "box4", f"{' + '.join(area_terms)} = {self.format_area_int(area_deduction)}m")
+            self.set_calc_area(root, "box5", f"≒ {self.format_area_int(area_deduction)}m")
+            self.set_calc_area_diff(root, "box7", area_value, area_deduction)
+            self.set_calc_area(root, "box8", f"= {self.format_area_int(area_diff)}m")
+
+    def format_length(self, value):
+        return f"{float(value or 0):.1f}"
+
+    def format_area_int(self, value):
+        return str(round(float(value or 0)))
+
+    def replace_children_with_text(self, elem, text):
+        elem.text = text
+        for child in list(elem):
+            elem.remove(child)
+
+    def set_calc_text(self, root, elem_id, text):
+        elems = root.xpath(f"//*[@id='{elem_id}']")
+        if elems:
+            self.replace_children_with_text(elems[0], text)
+
+    def set_calc_distance(self, root, elem_id, label, detail):
+        elems = root.xpath(f"//*[@id='{elem_id}']")
+        if not elems:
+            return
+
+        elem = elems[0]
+        self.replace_children_with_text(elem, label)
+        p = ET.SubElement(elem, "p")
+        p.text = detail
+
+    def set_calc_area(self, root, elem_id, text_before_sup):
+        elems = root.xpath(f"//*[@id='{elem_id}']")
+        if not elems:
+            return
+
+        elem = elems[0]
+        self.replace_children_with_text(elem, text_before_sup)
+        sup = ET.SubElement(elem, "sup")
+        sup.text = "2"
+
+    def set_calc_area_diff(self, root, elem_id, area_value, area_deduction):
+        elems = root.xpath(f"//*[@id='{elem_id}']")
+        if not elems:
+            return
+
+        elem = elems[0]
+        self.replace_children_with_text(elem, f"{self.format_area_int(area_value)}m")
+        first_sup = ET.SubElement(elem, "sup")
+        first_sup.text = "2"
+        first_sup.tail = f" - {self.format_area_int(area_deduction)}m"
+        second_sup = ET.SubElement(elem, "sup")
+        second_sup.text = "2"
 
     def clean_html_tree(self, root):
         for elem in root.iter():
@@ -743,7 +890,6 @@ class Main(QDockWidget, FORM_CLASS):
                     page.length = length
                     page.xy_table_rows = self.point_layer_to_html_rows(
                         page.pt_layer,
-                        values.get("name"),
                         name_expression=s.fieldName,
                     )
                 except Exception as e:
@@ -828,10 +974,24 @@ class Main(QDockWidget, FORM_CLASS):
                 raise ValueError(f"座標表の作成に失敗しました feature id={f.id()}") from e
 
             rows.append(
-                f"<tr><td>{name}</td><td>{x:.4f}</td><td>{y:.4f}</td></tr>"
+                f"<tr><td>{name}</td><td>{self.format_coordinate(x)}</td><td>{self.format_coordinate(y)}</td></tr>"
             )
 
         return rows
+
+    def format_coordinate(self, value, decimals=None):
+        if decimals is None:
+            try:
+                decimals = int(self.ketasu.value())
+            except (AttributeError, TypeError, ValueError):
+                decimals = 4
+
+        if decimals < 0:
+            decimals = 0
+
+        factor = 10 ** decimals
+        truncated = math.trunc(value * factor) / factor
+        return f"{truncated:.{decimals}f}"
 
     def create_layout(self, target_layers=None):
         project = QgsProject.instance()
@@ -974,41 +1134,6 @@ class HaisuiPage(QWidget):
 
         layout.addRow(point_group)
 
-        # 標高指定
-        hyoko_group = QGroupBox("標高指定")
-        hyoko_layout = QGridLayout(hyoko_group)
-
-        self.no_hyoko = QRadioButton("標高を用いない")
-        self.point_hyoko = QRadioButton("ポイントレイヤのフィールドを使用")
-        self.dem_hyoko = QRadioButton("DEMレイヤを使用")
-        self.no_hyoko.setChecked(True)
-
-        radio_layout = QHBoxLayout()
-        radio_layout.addWidget(self.no_hyoko)
-        radio_layout.addWidget(self.point_hyoko)
-        radio_layout.addWidget(self.dem_hyoko)
-
-        self.hyoko_field = QgsFieldComboBox()
-        self.hyoko_field.setEnabled(False)
-        self.hyoko_field.setLayer(self.point_layer.currentLayer())
-
-        self.dem_layer = QgsMapLayerComboBox()
-        self.dem_layer.setFilters(QgsMapLayerProxyModel.RasterLayer)
-        self.dem_layer.setEnabled(False)
-
-        self.point_layer.layerChanged.connect(self.hyoko_field.setLayer)
-
-        self.point_hyoko.toggled.connect(self.hyoko_field.setEnabled)
-        self.dem_hyoko.toggled.connect(self.dem_layer.setEnabled)
-
-        hyoko_layout.addLayout(radio_layout, 0, 0, 1, 2)
-        hyoko_layout.addWidget(QLabel("標高フィールド"), 1, 0)
-        hyoko_layout.addWidget(self.hyoko_field, 1, 1)
-        hyoko_layout.addWidget(QLabel("DEMレイヤ"), 2, 0)
-        hyoko_layout.addWidget(self.dem_layer, 2, 1)
-
-        layout.addRow(hyoko_group)
-
         # 使用する属性
         attr_group = QGroupBox("使用する属性")
         attr_layout = QGridLayout(attr_group)
@@ -1040,16 +1165,6 @@ class HaisuiPage(QWidget):
             "is_jochi": self.is_jochi.isChecked(),
             "point_layer": self.point_layer.currentLayer(),
             "filter_exp": self.filter_exp.expression(),
-            "hyoko_mode": self.hyoko_mode(),
-            "hyoko_field": self.hyoko_field.currentField(),
-            "dem_layer": self.dem_layer.currentLayer(),
             "sokuten_label_exp": self.sokuten_label_exp.expression(),
             "sort_exp": self.sort_exp.expression(),
         }
-
-    def hyoko_mode(self):
-        if self.point_hyoko.isChecked():
-            return "field"
-        if self.dem_hyoko.isChecked():
-            return "dem"
-        return "none"

@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>1-2林班 - 実測図</title>
+  <link rel="stylesheet" href="asset/index.css">
+</head>
+<body>
+  <div id="main_container">
+    <h1>実測図</h1>
+    <div id="zumen_select" class="print_hide">
+      <select id="zumen_type">
+        <option value="">図面を選択</option>
+      <option value="shui">周囲</option>
+<option value="haisui_1">排水 A</option>
+<option value="haisui_2">排水 B</option>
+<option value="mix">全体</option></select>
+    </div>
+    <div id="info_container">
+      <div id="jissokudate">
+        <div class="description">実測年月日</div>
+        <div class="value" id="sokuryobi">2026年01月01日</div>
+      </div>
+      <div id="jissokusya">
+        <div class="description">実測者氏名</div>
+        <div class="value">
+          <div class="value1" id="sokuryojigyosha">佐藤林業(株)</div>
+          <div class="value2" id="sokuryosha">佐藤太郎</div>
+        </div>
+      </div>
+      <div id="seizudate">
+        <div class="description">製図年月日</div>
+        <div class="value" id="seizubi">2026年01月01日</div>
+      </div>
+      <div id="seizusya">
+        <div class="description">製図者氏名</div>
+        <div class="value">
+          <div class="value1" id="seizujigyosha">佐藤林業(株)</div>
+          <div class="value2" id="seizusha">佐藤太郎</div>
+        </div>
+      </div>
+      <div id="location">
+        <div class="value">
+          <div class="value1" id="sanrinshoyusha">山谷岳男</div>
+          <div class="value2" id="rinshohan">1-2林班</div>
+          <!-- <div class="value3" id="haisui_name">
+          </div> -->
+        <div id="haisui_name_haisui_1" class="value3" data-option-panel="haisui haisui_1">排水 A</div>
+<div id="haisui_name_haisui_2" class="value3" data-option-panel="haisui haisui_2">排水 B</div>
+</div>
+      </div>
+    </div>
+    <div id="sub_container">
+      <div id="xy_container">
+        <dl id="detail">
+          <div data-option-panel="shui mix">
+            <dt class="description">外周全長</dt>
+            <dd class="value">
+<span id="shui_length">872.4</span>m</dd>
+          </div>
+          <!-- <div>
+            <dt class="description">延長</dt>
+            <dd class="value"><span></span>m</dd>
+          </div> -->
+          <div id="detail_length_haisui_1" data-option-panel="haisui haisui_1">
+<dt class="description">延長</dt>
+<dd class="value">
+<span>192.8</span>m</dd>
+</div>
+<div id="detail_length_haisui_2" data-option-panel="haisui haisui_2">
+<dt class="description">延長</dt>
+<dd class="value">
+<span>184.0</span>m</dd>
+</div>
+<div data-option-panel="shui mix">
+            <dt class="description">面積</dt>
+            <dd class="value">
+<span id="area">47229</span>m<sup>2</sup>
+</dd>
+          </div>
+          <!-- <div>
+            <dt class="description">幅</dt>
+            <dd class="value"><span></span>m</dd>
+          </div> -->
+          <div id="detail_haba_haisui_1" data-option-panel="haisui haisui_1">
+<dt class="description">排水幅</dt>
+<dd class="value">
+<span>1.5</span>m</dd>
+</div>
+<div id="detail_haba_haisui_2" data-option-panel="haisui haisui_2">
+<dt class="description">排水幅</dt>
+<dd class="value">
+<span>1.0</span>m</dd>
+</div>
+<div>
+            <dt class="description">測地系</dt>
+            <dd class="value" id="crs">EPSG:6680</dd>
+          </div>
+          <div>
+            <dt class="description">磁北補正</dt>
+            <dd class="value">
+<span id="magnetic_correction">7.0</span>°</dd>
+          </div>
+        </dl>
+        <div id="xy_updown" class="print_hide" hidden="hidden">
+          <button type="button" id="xy_prev">▲</button>
+          <button type="button" id="xy_next">▼</button>
+        </div>
+      <table id="xy_table_shui_1" class="xy_table" data-option-panel="shui" data-xy-table="1">
+<thead><tr>
+<th>測点</th>
+<th>X</th>
+<th>Y</th>
+</tr></thead>
+<tbody id="xy_table_body_shui_1">
+<tr>
+<td>0</td>
+<td>104.27555</td>
+<td>71014.98847</td>
+</tr>
+<tr>
+<td>1</td>
+<td>97.79220</td>
+<td>71060.48901</td>
+</tr>
+<tr>
+<td>2</td>
+<td>129.50593</td>
+<td>71083.68274</td>
+</tr>
+<tr>
+<td>3</td>
+<td>162.19954</td>
+<td>71210.75004</td>
+</tr>
+<tr>
+<td>4</td>
+<td>181.16233</td>
+<td>71248.00477</td>
+</tr>
+<tr>
+<td>5</td>
+<td>205.94234</td>
+<td>71250.65657</td>
+</tr>
+<tr>
+<td>6</td>
+<td>221.87293</td>
+<td>71235.96558</td>
+</tr>
+<tr>
+<td>7</td>
+<td>283.59147</td>
+<td>71211.81793</td>
+</tr>
+<tr>
+<td>8</td>
+<td>303.93508</td>
+<td>71209.96592</td>
+</tr>
+<tr>
+<td>9</td>
+<td>323.71145</td>
+<td>71183.74732</td>
+</tr>
+<tr>
+<td>10</td>
+<td>334.62041</td>
+<td>71146.59760</td>
+</tr>
+<tr>
+<td>11</td>
+<td>321.37234</td>
+<td>71111.28648</td>
+</tr>
+<tr>
+<td>12</td>
+<td>320.25763</td>
+<td>71055.50046</td>
+</tr>
+<tr>
+<td>13</td>
+<td>308.32205</td>
+<td>71005.44696</td>
+</tr>
+<tr>
+<td>14</td>
+<td>312.82678</td>
+<td>70985.58641</td>
+</tr>
+<tr>
+<td>15</td>
+<td>275.39651</td>
+<td>70961.09024</td>
+</tr>
+<tr>
+<td>16</td>
+<td>224.50962</td>
+<td>70975.65835</td>
+</tr>
+<tr>
+<td>17</td>
+<td>195.89102</td>
+<td>70981.96949</td>
+</tr>
+<tr>
+<td>18</td>
+<td>145.02210</td>
+<td>70990.12593</td>
+</tr>
+<tr>
+<td>19</td>
+<td>110.71575</td>
+<td>70984.87595</td>
+</tr>
+<tr>
+<td>20</td>
+<td>104.27555</td>
+<td>71014.98847</td>
+</tr>
+</tbody>
+</table>
+<table id="xy_table_haisui_1_1" class="xy_table" data-option-panel="haisui_1" data-xy-table="1">
+<thead><tr>
+<th>測点</th>
+<th>X</th>
+<th>Y</th>
+</tr></thead>
+<tbody id="xy_table_body_haisui_1_1">
+<tr>
+<td>2</td>
+<td>129.50593</td>
+<td>71083.68274</td>
+</tr>
+<tr>
+<td>12</td>
+<td>320.25763</td>
+<td>71055.50046</td>
+</tr>
+</tbody>
+</table>
+<table id="xy_table_haisui_2_1" class="xy_table" data-option-panel="haisui_2" data-xy-table="1">
+<thead><tr>
+<th>測点</th>
+<th>X</th>
+<th>Y</th>
+</tr></thead>
+<tbody id="xy_table_body_haisui_2_1">
+<tr>
+<td>3</td>
+<td>162.19954</td>
+<td>71210.75004</td>
+</tr>
+<tr>
+<td>10</td>
+<td>334.62041</td>
+<td>71146.59760</td>
+</tr>
+</tbody>
+</table>
+<table id="xy_table_mix_1" class="xy_table" data-option-panel="mix" data-xy-table="1">
+<thead><tr>
+<th>測点</th>
+<th>X</th>
+<th>Y</th>
+</tr></thead>
+<tbody id="xy_table_body_mix_1">
+<tr>
+<td>0</td>
+<td>104.27555</td>
+<td>71014.98847</td>
+</tr>
+<tr>
+<td>1</td>
+<td>97.79220</td>
+<td>71060.48901</td>
+</tr>
+<tr>
+<td>2</td>
+<td>129.50593</td>
+<td>71083.68274</td>
+</tr>
+<tr>
+<td>3</td>
+<td>162.19954</td>
+<td>71210.75004</td>
+</tr>
+<tr>
+<td>4</td>
+<td>181.16233</td>
+<td>71248.00477</td>
+</tr>
+<tr>
+<td>5</td>
+<td>205.94234</td>
+<td>71250.65657</td>
+</tr>
+<tr>
+<td>6</td>
+<td>221.87293</td>
+<td>71235.96558</td>
+</tr>
+<tr>
+<td>7</td>
+<td>283.59147</td>
+<td>71211.81793</td>
+</tr>
+<tr>
+<td>8</td>
+<td>303.93508</td>
+<td>71209.96592</td>
+</tr>
+<tr>
+<td>9</td>
+<td>323.71145</td>
+<td>71183.74732</td>
+</tr>
+<tr>
+<td>10</td>
+<td>334.62041</td>
+<td>71146.59760</td>
+</tr>
+<tr>
+<td>11</td>
+<td>321.37234</td>
+<td>71111.28648</td>
+</tr>
+<tr>
+<td>12</td>
+<td>320.25763</td>
+<td>71055.50046</td>
+</tr>
+<tr>
+<td>13</td>
+<td>308.32205</td>
+<td>71005.44696</td>
+</tr>
+<tr>
+<td>14</td>
+<td>312.82678</td>
+<td>70985.58641</td>
+</tr>
+<tr>
+<td>15</td>
+<td>275.39651</td>
+<td>70961.09024</td>
+</tr>
+<tr>
+<td>16</td>
+<td>224.50962</td>
+<td>70975.65835</td>
+</tr>
+<tr>
+<td>17</td>
+<td>195.89102</td>
+<td>70981.96949</td>
+</tr>
+<tr>
+<td>18</td>
+<td>145.02210</td>
+<td>70990.12593</td>
+</tr>
+<tr>
+<td>19</td>
+<td>110.71575</td>
+<td>70984.87595</td>
+</tr>
+<tr>
+<td>20</td>
+<td>104.27555</td>
+<td>71014.98847</td>
+</tr>
+</tbody>
+</table>
+</div>
+      <div id="map_container">
+        <div id="map_detail">
+          <dl>
+            <div id="area2_" data-option-panel="shui mix">
+              <dt class="description">面積 </dt>
+              <dd class="value">
+<span id="area2">47229</span>m<sup>2</sup>
+</dd>
+            </div>
+            <!-- <div>
+              <dt class="description">延長&nbsp;</dt>
+              <dd class="value">
+                m</dd>
+            </div> -->
+            <div id="length_haisui_1" data-option-panel="haisui haisui_1">
+<dt class="description">延長 </dt>
+<dd class="value">
+<span>192.8</span>m</dd>
+</div>
+<div id="length_haisui_2" data-option-panel="haisui haisui_2">
+<dt class="description">延長 </dt>
+<dd class="value">
+<span>184.0</span>m</dd>
+</div>
+<div id="scale_">
+                <dt class="description">縮尺 </dt>
+              <dd class="value" id="scale">1/5000</dd>
+            </div>
+          </dl>
+        </div>
+        <div id="map">
+          <img src="asset/houi.svg" alt="" id="houi">
+          <!-- <img src="asset/shui_map.png" alt="" class="main_map" data-option-panel="shui"> -->
+          <!-- <img src="asset/haisui_map.png" alt="" class="main_map" data-option-panel="haisui"> -->
+          <!-- <img src="asset/mix_map.png" alt="" class="main_map" data-option-panel="mix"> -->
+        <img src="asset/shui_map.png" alt="" class="main_map" data-option-panel="shui"><img src="asset/haisui_1_map.png" alt="" class="main_map" data-option-panel="haisui_1"><img src="asset/haisui_2_map.png" alt="" class="main_map" data-option-panel="haisui_2"><img src="asset/mix_map.png" alt="" class="main_map" data-option-panel="mix">
+</div>
+        <div id="calc" data-option-panel="mix" data-is-jochi-keisan="1">
+          <div id="calc_distance">
+            <div id="calc_distance_haisuikou">排水：<p>A 192.8m + B 184.0m = 376.8m</p>
+</div>
+            <div id="calc_distance_jochi">除地：<p>A 192.8m = 192.8m</p>
+</div>
+          </div>
+          <div id="calc_area">
+            <div id="box1">排水：</div>
+            <div id="box2">376.8m</div>
+            <div id="box3">除地：</div>
+            <div id="box4">A 192.8*1.5 = 289m<sup>2</sup>
+</div>
+            <div id="box5">≒ 289m<sup>2</sup>
+</div>
+            <div id="box6">面積：</div>
+            <div id="box7">47229m<sup>2</sup> - 289m<sup>2</sup>
+</div>
+            <div id="box8">= 46940m<sup>2</sup>
+</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    (() => {
+      const select = document.getElementById("zumen_type");
+      const panels = document.querySelectorAll("[data-option-panel]");
+      const xyUpdown = document.getElementById("xy_updown");
+      const xyPrev = document.getElementById("xy_prev");
+      const xyNext = document.getElementById("xy_next");
+      const xyTables = Array.from(document.querySelectorAll("[data-xy-table]"));
+      const calc = document.getElementById("calc");
+      const baseTitle = document.title;
+      let currentXyIndex = 0;
+
+      if (!select) {
+        return;
+      }
+
+      const panelValues = (panel) => (
+        panel.dataset.optionPanel || ""
+      ).split(/\s+/).filter(Boolean);
+
+      const updatePanels = () => {
+        const selectedValue = select.value;
+        const optionValues = new Set(
+          Array.from(select.options).map((option) => option.value)
+        );
+
+        panels.forEach((panel) => {
+          if (panel.id === "calc" && panel.dataset.isJochiKeisan !== "1") {
+            panel.hidden = true;
+            return;
+          }
+          const values = panelValues(panel);
+          const hasOption = values.some((value) => optionValues.has(value));
+          panel.hidden = !hasOption || !values.includes(selectedValue);
+        });
+      };
+
+      const updateXyTables = () => {
+        const selectedValue = select.value;
+        const activeXyTables = xyTables.filter((table) => (
+          panelValues(table).includes(selectedValue)
+        ));
+
+        if (activeXyTables.length === 0) {
+          if (xyUpdown) {
+            xyUpdown.hidden = true;
+          }
+          xyTables.forEach((table) => {
+            table.hidden = true;
+          });
+          return;
+        }
+
+        if (currentXyIndex >= activeXyTables.length) {
+          currentXyIndex = 0;
+        }
+
+        xyTables.forEach((table, index) => {
+          table.hidden = true;
+        });
+
+        activeXyTables.forEach((table, index) => {
+          table.hidden = index !== currentXyIndex;
+        });
+
+        if (xyUpdown) {
+          xyUpdown.hidden = activeXyTables.length <= 1;
+        }
+      };
+
+      const updateTitle = () => {
+        const selectedOption = select.options[select.selectedIndex];
+        if (!selectedOption || !select.value) {
+          document.title = baseTitle;
+          return;
+        }
+
+        document.title = `${baseTitle.replace(/\s*-\s*実測図\s*$/, "")} - ${selectedOption.textContent.trim()} - 実測図`;
+      };
+
+      if (xyPrev) {
+        xyPrev.addEventListener("click", () => {
+          const activeXyTables = xyTables.filter((table) => (
+            panelValues(table).includes(select.value)
+          ));
+
+          if (activeXyTables.length === 0) {
+            return;
+          }
+
+          currentXyIndex = (currentXyIndex - 1 + activeXyTables.length) % activeXyTables.length;
+          updateXyTables();
+        });
+      }
+
+      if (xyNext) {
+        xyNext.addEventListener("click", () => {
+          const activeXyTables = xyTables.filter((table) => (
+            panelValues(table).includes(select.value)
+          ));
+
+          if (activeXyTables.length === 0) {
+            return;
+          }
+
+          currentXyIndex = (currentXyIndex + 1) % activeXyTables.length;
+          updateXyTables();
+        });
+      }
+
+      select.addEventListener("change", () => {
+        currentXyIndex = 0;
+        updatePanels();
+        updateXyTables();
+        updateTitle();
+      });
+
+      const renderCalc = () => {
+        if (!calc) {
+          return;
+        }
+
+        if (calc.dataset.isJochiKeisan !== "1") {
+          calc.hidden = true;
+        }
+      };
+
+      updatePanels();
+      renderCalc();
+      updateXyTables();
+      updateTitle();
+    })();
+  </script>
+</body>
+</html>
