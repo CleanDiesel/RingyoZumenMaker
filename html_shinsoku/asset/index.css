@@ -129,7 +129,7 @@ h1 {
   grid-template-rows: 1fr 1fr;
 }
 #calc_area {
-  width: 40%;
+  width: 60%;
   display: grid;
   grid-template-columns: 1fr 2fr;
   grid-template-rows: repeat(5, 1fr);
@@ -193,10 +193,6 @@ h1 {
 }
 #area2_ .value > div {
   flex-direction: column;
-}
-#area2_ .value {
-  display: flex;
-  align-items: center;
 }
 @media print {
     .print_hide {

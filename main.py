@@ -277,6 +277,11 @@ class Main(QDockWidget, FORM_CLASS):
         parser = ET.HTMLParser()
         html_path = os.path.join(os.path.dirname(__file__), 'html_shinsoku', 'index.html')
         root = ET.parse(html_path, parser)
+
+        self.htmlValues.setdefault("shui_length", 0)
+        self.htmlValues.setdefault("area", 0)
+        self.htmlValues.setdefault("area2", 0)
+        self.htmlValues.setdefault("area_ha", "0.00")
         
         self.htmlValues.update({
             "sokuryobi": self.sokuryobi.text(),
@@ -316,7 +321,7 @@ class Main(QDockWidget, FORM_CLASS):
                 self.add_haisui_length(root, f"haisui_{page.index}", page.length)
                 self.add_haisui_detail(root, f"haisui_{page.index}", page.length, values.get("haba"))
                 self.add_haisui_name(root, f"haisui_{page.index}", display_name)
-        if self.isShui.isChecked() and self.isHaisui.isChecked():
+        if self.isShui.isChecked() or self.isHaisui.isChecked():
             self.update_zumen_options(root, "mix", "全体")
             self.update_xy_tables(root, self.xy_table_rows, "mix")
             self.add_main_map(root, "mix")
@@ -324,8 +329,7 @@ class Main(QDockWidget, FORM_CLASS):
         self.add_calc_data(
             root,
             write_to_html=(
-                self.isShui.isChecked()
-                and self.isHaisui.isChecked()
+                (self.isShui.isChecked() or self.isHaisui.isChecked())
                 and self.isJochikeisan.isChecked()
             ),
         )
@@ -386,7 +390,7 @@ class Main(QDockWidget, FORM_CLASS):
         all_distance = sum(item["length"] for item in items)
         jochi_items = [item for item in items if item["is_jochi"]]
         jochi_distance = sum(item["length"] for item in jochi_items)
-        area_deduction = sum(item["length"] * item["haba"] for item in jochi_items)
+        area_deduction = sum(self.haisui_calc_area(item) for item in jochi_items)
         area_diff = round(float(area_value or 0)) - round(area_deduction)
 
         all_terms = [
@@ -398,7 +402,7 @@ class Main(QDockWidget, FORM_CLASS):
             for item in jochi_items
         ]
         area_terms = [
-            f"{self.clean_html_text(item['name'])} {self.format_length(item['length'])}*{self.format_length(item['haba'])}"
+            self.haisui_area_term(item)
             for item in jochi_items
         ]
         all_distance_detail = f"{' + '.join(all_terms)} = {self.format_length(all_distance)}m"
@@ -407,7 +411,8 @@ class Main(QDockWidget, FORM_CLASS):
         area_diff_detail = (
             f"{self.format_area_int(area_value)}m2 - "
             f"{self.format_area_int(area_deduction)}m2 = "
-            f"{self.format_area_int(area_diff)}m2"
+            f"{self.format_area_int(area_diff)}m2 "
+            f"≒ {self.format_area_ha(area_diff)}ha"
         )
 
         self.append_output_log(f"周囲外周長: {self.format_length(self.htmlValues.get('shui_length', 0))}m")
@@ -435,13 +440,28 @@ class Main(QDockWidget, FORM_CLASS):
             self.set_calc_area(root, "box4", f"{' + '.join(area_terms)} = {self.format_area_int(area_deduction)}m")
             self.set_calc_area(root, "box5", f"≒ {self.format_area_int(area_deduction)}m")
             self.set_calc_area_diff(root, "box7", area_value, area_deduction)
-            self.set_calc_area(root, "box8", f"= {self.format_area_int(area_diff)}m")
+            self.set_calc_area_with_ha(root, "box8", area_diff)
 
     def format_length(self, value):
         return f"{float(value or 0):.1f}"
 
     def format_area_int(self, value):
         return str(round(float(value or 0)))
+
+    def format_area_ha(self, value):
+        return f"{math.trunc((float(value or 0) / 10000) * 100) / 100:.2f}"
+
+    def haisui_calc_area(self, item):
+        area = float(item.get("length") or 0) * float(item.get("haba") or 0)
+        return 0 if area < 100 else area
+
+    def haisui_area_term(self, item):
+        name = self.clean_html_text(item["name"])
+        raw_area = float(item.get("length") or 0) * float(item.get("haba") or 0)
+        term = f"{name} {self.format_length(item['length'])}*{self.format_length(item['haba'])}"
+        if 0 < raw_area < 100:
+            return f"{term}(0m2)"
+        return term
 
     def replace_children_with_text(self, elem, text):
         elem.text = text
@@ -485,6 +505,17 @@ class Main(QDockWidget, FORM_CLASS):
         first_sup.tail = f" - {self.format_area_int(area_deduction)}m"
         second_sup = ET.SubElement(elem, "sup")
         second_sup.text = "2"
+
+    def set_calc_area_with_ha(self, root, elem_id, area_value):
+        elems = root.xpath(f"//*[@id='{elem_id}']")
+        if not elems:
+            return
+
+        elem = elems[0]
+        self.replace_children_with_text(elem, f"= {self.format_area_int(area_value)}m")
+        sup = ET.SubElement(elem, "sup")
+        sup.text = "2"
+        sup.tail = f" ≒ {self.format_area_ha(area_value)}ha"
 
     def clean_html_tree(self, root):
         for elem in root.iter():
@@ -842,7 +873,7 @@ class Main(QDockWidget, FORM_CLASS):
                 self.htmlValues['shui_length'] = round(sum(f.geometry().length() for f in self.LayerSet['shui']['line'].getFeatures()), 1)
                 self.htmlValues['area'] = int(sum(f.geometry().area() for f in shui_area_layer.getFeatures()))
                 self.htmlValues['area2'] = self.htmlValues['area']
-                self.htmlValues['area_ha'] = self.htmlValues['area'] / 10000
+                self.htmlValues['area_ha'] = self.format_area_ha(self.htmlValues['area'])
                 self.xy_table_rows = self.point_layer_to_html_rows(
                     self.LayerSet['shui']['pt'],
                     name_expression=s.fieldName,
@@ -904,22 +935,26 @@ class Main(QDockWidget, FORM_CLASS):
                 if layout:
                     self.export_layout_image(layout, f"haisui_{page.index}")
 
-        if self.isShui.isChecked() and self.isHaisui.isChecked():
-            target_layers = [self.LayerSet['shui']['pt'], self.LayerSet['shui']['line']]
-            for page in self.haisuis:
-                if page.pt_layer is None or page.line_layer is None:
-                    continue
-                page.pt_layer.loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "mix_haisui_point.qml"))
-                page.line_layer.loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "mix_haisui_line.qml"))
-                labeling = page.line_layer.labeling()
-                s = labeling.settings() if labeling else QgsPalLayerSettings()
-                label_text = self.clean_html_text(page.values().get("name")).replace("'", "''")
-                s.fieldName = f"'{label_text}'"
-                s.isExpression = True
-                page.line_layer.setLabeling(QgsVectorLayerSimpleLabeling(s))
-                page.line_layer.setLabelsEnabled(True)
-                target_layers.extend([page.pt_layer, page.line_layer])
-            
+        if self.isShui.isChecked() or self.isHaisui.isChecked():
+            target_layers = []
+            if self.isShui.isChecked():
+                target_layers.extend([self.LayerSet['shui']['pt'], self.LayerSet['shui']['line']])
+
+            if self.isHaisui.isChecked():
+                for page in self.haisuis:
+                    if page.pt_layer is None or page.line_layer is None:
+                        continue
+                    page.pt_layer.loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "mix_haisui_point.qml"))
+                    page.line_layer.loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "mix_haisui_line.qml"))
+                    labeling = page.line_layer.labeling()
+                    s = labeling.settings() if labeling else QgsPalLayerSettings()
+                    label_text = self.clean_html_text(page.values().get("name")).replace("'", "''")
+                    s.fieldName = f"'{label_text}'"
+                    s.isExpression = True
+                    page.line_layer.setLabeling(QgsVectorLayerSimpleLabeling(s))
+                    page.line_layer.setLabelsEnabled(True)
+                    target_layers.extend([page.pt_layer, page.line_layer])
+
             layout = self.create_layout(target_layers=target_layers)
             if layout:
                 self.export_layout_image(layout, "mix")
