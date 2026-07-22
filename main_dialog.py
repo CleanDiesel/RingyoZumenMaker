@@ -38,7 +38,7 @@ class mainDialogPlugin:
 
     def run(self, checked=True):
         if self.dialog is None:
-            self.dialog = Main(self.iface.mainWindow())
+            self.dialog = Main(self.iface.mainWindow(), iface=self.iface)
             self.dialog.visibilityChanged.connect(self.action.setChecked)
             try:
                 dock_area = Qt.DockWidgetArea.RightDockWidgetArea

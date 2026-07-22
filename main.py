@@ -7,12 +7,13 @@ from qgis.PyQt.QtWidgets import (
     QScrollArea
 )
 from qgis.PyQt.QtCore import QDate
+from qgis.PyQt.QtXml import QDomDocument
 from qgis.gui import QgsMapLayerComboBox, QgsFieldExpressionWidget, QgsFieldComboBox
 from qgis.core import (
     QgsWkbTypes, QgsMapLayerType, QgsVectorLayerSimpleLabeling, QgsMapLayerProxyModel, QgsProcessingModelAlgorithm,
     QgsProject, QgsPrintLayout, QgsLayoutItemMap, QgsLayoutPoint, QgsLayoutSize, QgsUnitTypes, QgsLayoutExporter,
-    QgsPalLayerSettings, QgsExpression, QgsExpressionContext, QgsExpressionContextUtils,
-    QgsSettings, QgsCoordinateReferenceSystem,
+    QgsPalLayerSettings, QgsExpression, QgsExpressionContext, QgsExpressionContextUtils, QgsLayoutItemLabel, QgsLayoutItemPicture,
+    QgsSettings, QgsCoordinateReferenceSystem, QgsVectorFileWriter, QgsReadWriteContext,
 )
 from qgis.PyQt import uic
 import os
@@ -27,8 +28,9 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), "main_dia
 
 
 class Main(QDockWidget, FORM_CLASS):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, iface=None):
         super().__init__(parent)
+        self.iface = iface
         self.setObjectName("RingyoZumenMakerDockWidget")
 
         # A QDockWidget must contain a separate QWidget.  Load the Designer
@@ -144,10 +146,10 @@ class Main(QDockWidget, FORM_CLASS):
         settings.setValue(self.settings_key("seizubi"), self.seizubi.date().toString("yyyy-MM-dd"))
         settings.setValue(self.settings_key("scale"), self.scale.scale())
         settings.setValue(self.settings_key("crs"), self.crs.crs().authid())
-        settings.setValue(self.settings_key("jihosei"), self.jihosei.value())
         settings.setValue(self.settings_key("fileName"), self.fileName.filePath())
         settings.setValue(self.settings_key("ketasu"), self.ketasu.value())
         settings.setValue(self.settings_key("isJochikeisan"), self.isJochikeisan.isChecked())
+        settings.setValue(self.settings_key("isIchizu"), self.isIchizu.isChecked())
         settings.setValue(self.settings_key("isShui"), self.isShui.isChecked())
         settings.setValue(self.settings_key("isHaisui"), self.isHaisui.isChecked())
 
@@ -183,13 +185,6 @@ class Main(QDockWidget, FORM_CLASS):
             if crs.isValid():
                 self.crs.setCrs(crs)
 
-        jihosei_value = settings.value(self.settings_key("jihosei"), "")
-        if jihosei_value not in ("", None):
-            try:
-                self.jihosei.setValue(float(jihosei_value))
-            except (TypeError, ValueError):
-                pass
-
         file_path = settings.value(self.settings_key("fileName"), "")
         if file_path:
             self.fileName.setFilePath(str(file_path))
@@ -202,6 +197,7 @@ class Main(QDockWidget, FORM_CLASS):
                 pass
 
         self.isJochikeisan.setChecked(self.settings_bool(settings, "isJochikeisan", False))
+        self.isIchizu.setChecked(self.settings_bool(settings, "isIchizu", False))
         self.isShui.setChecked(self.settings_bool(settings, "isShui", False))
         self.isHaisui.setChecked(self.settings_bool(settings, "isHaisui", False))
 
@@ -291,7 +287,6 @@ class Main(QDockWidget, FORM_CLASS):
             "sanrinshoyusha": self.sanrinshoyusha.text(),
             "rinshohan": self.rinshohan.text(),
             "crs": self.crs.crs().authid(),
-            "magnetic_correction": f"{self.jihosei.value()}",
             "seizubi": self.seizubi.text(),
             "seizusha": self.seizusha.text() or self.sokuryosha.text(),
             "seizujigyosha": self.seizujigyosha.text() or self.sokuryojigyosha.text(),
@@ -959,7 +954,268 @@ class Main(QDockWidget, FORM_CLASS):
             if layout:
                 self.export_layout_image(layout, "mix")
 
+        if self.isIchizu.isChecked() and not self.export_location_pdf():
+            return False
+
+        if not self.save_result_layers_to_geopackage():
+            return False
+
         return True
+
+    def export_location_pdf(self):
+        line_layers = self.location_line_layers()
+        if not line_layers:
+            return True
+
+        style_dir = Path(__file__).parent / "styles"
+        if self.isShui.isChecked():
+            self.LayerSet["shui"]["line"].loadNamedStyle(str(style_dir / "location_shui.qml"))
+
+        if self.isHaisui.isChecked():
+            for page in self.haisuis:
+                if page.line_layer is not None:
+                    page.line_layer.loadNamedStyle(str(style_dir / "location_haisui.qml"))
+
+        template_path = style_dir / "location.qpt"
+        layout = self.create_location_layout_from_template(template_path)
+        if layout is None:
+            return False
+
+        self.set_location_picture_paths(layout, style_dir)
+        self.set_location_label_text(layout)
+
+        map_item = layout.itemById("地図 1")
+        if not isinstance(map_item, QgsLayoutItemMap):
+            map_item = self.first_layout_map_item(layout)
+
+        if map_item is None:
+            QMessageBox.warning(
+                self,
+                "エラー",
+                "位置図テンプレート内に地図アイテムがありません"
+            )
+            return False
+
+        map_item.setCrs(self.crs.crs())
+        map_item.setLayers(self.location_map_layers(line_layers))
+
+        extent = self.combined_layer_extent(line_layers)
+        if extent is not None:
+            map_item.zoomToExtent(extent)
+            map_item.setScale(self.scale.scale())
+
+        output_path = Path(self.fileName.filePath()) / "location_map.pdf"
+        exporter = QgsLayoutExporter(layout)
+        settings = QgsLayoutExporter.PdfExportSettings()
+        result = exporter.exportToPdf(str(output_path), settings)
+        if result != QgsLayoutExporter.Success:
+            QMessageBox.warning(
+                self,
+                "エラー",
+                f"位置図PDFの保存に失敗しました:\n{output_path}"
+            )
+            return False
+
+        self.append_output_log(f"位置図PDFを書き込みました: {output_path}")
+        return True
+
+    def location_line_layers(self):
+        layers = []
+        if self.isShui.isChecked():
+            layers.append(self.LayerSet["shui"]["line"])
+
+        if self.isHaisui.isChecked():
+            for page in self.haisuis:
+                if page.line_layer is not None:
+                    layers.append(page.line_layer)
+
+        return layers
+
+    def create_location_layout_from_template(self, template_path):
+        try:
+            with open(template_path, "r", encoding="utf-8") as f:
+                template_xml = f.read()
+        except OSError as e:
+            QMessageBox.warning(
+                self,
+                "エラー",
+                f"位置図テンプレートを読み込めません:\n{e}"
+            )
+            return None
+
+        doc = QDomDocument()
+        content_result = doc.setContent(template_xml)
+        content_ok = content_result[0] if isinstance(content_result, tuple) else content_result
+        if not content_ok:
+            QMessageBox.warning(
+                self,
+                "エラー",
+                f"位置図テンプレートの形式が正しくありません:\n{template_path}"
+            )
+            return None
+
+        project = QgsProject.instance()
+        layout_manager = project.layoutManager()
+        layout_name = "location_map"
+        old = layout_manager.layoutByName(layout_name)
+        if old:
+            layout_manager.removeLayout(old)
+
+        layout = QgsPrintLayout(project)
+        layout.initializeDefaults()
+        layout.loadFromTemplate(doc, QgsReadWriteContext())
+        layout.setName(layout_name)
+        layout_manager.addLayout(layout)
+        return layout
+
+    def set_location_picture_paths(self, layout, style_dir):
+        north_arrow = layout.itemById("方位記号")
+        if isinstance(north_arrow, QgsLayoutItemPicture):
+            north_arrow.setPicturePath(str(style_dir / "houi2.svg"))
+
+    def set_location_label_text(self, layout):
+        text = "\n".join([
+            self.clean_html_text(self.sanrinshoyusha.text()),
+            self.clean_html_text(self.rinshohan.text()),
+        ]).strip()
+
+        for item in layout.items():
+            if isinstance(item, QgsLayoutItemLabel) and not self.clean_html_text(item.text()).strip():
+                item.setText(text)
+                item.adjustSizeToText()
+                return
+
+    def first_layout_map_item(self, layout):
+        for item in layout.items():
+            if isinstance(item, QgsLayoutItemMap):
+                return item
+        return None
+
+    def location_map_layers(self, line_layers):
+        canvas_layers = []
+        if self.iface is not None:
+            canvas_layers = list(self.iface.mapCanvas().layers())
+
+        excluded_layers = set(line_layers + self.location_input_point_layers())
+        background_layers = [
+            layer
+            for layer in canvas_layers
+            if layer not in excluded_layers
+        ]
+        return line_layers + background_layers
+
+    def location_input_point_layers(self):
+        layers = []
+        if self.isShui.isChecked():
+            layer = self.get_shui_values().get("point_layer")
+            if layer is not None:
+                layers.append(layer)
+
+        if self.isHaisui.isChecked():
+            for page in self.haisuis:
+                layer = page.values().get("point_layer")
+                if layer is not None:
+                    layers.append(layer)
+
+        return layers
+
+    def combined_layer_extent(self, layers):
+        extent = None
+        for layer in layers:
+            layer_extent = layer.extent()
+            if extent is None:
+                extent = layer_extent
+            else:
+                extent.combineExtentWith(layer_extent)
+
+        if extent is None:
+            return None
+
+        if extent.width() <= 0 or extent.height() <= 0:
+            extent.grow(max(self.scale.scale() / 100, 1))
+            return extent
+
+        extent.grow(max(extent.width(), extent.height()) * 0.2)
+        return extent
+
+    def save_result_layers_to_geopackage(self):
+        output_dir = Path(self.fileName.filePath())
+        gpkg_path = output_dir / "ringyo_zumen.gpkg"
+
+        layers = []
+        if self.isShui.isChecked():
+            layers.extend([
+                {
+                    "layer": self.LayerSet["shui"]["pt"],
+                    "name": "周囲_点",
+                    "style": "point.qml",
+                },
+                {
+                    "layer": self.LayerSet["shui"]["line"],
+                    "name": "周囲_ライン",
+                    "style": "line.qml",
+                },
+            ])
+
+        if self.isHaisui.isChecked():
+            for page in self.haisuis:
+                if page.pt_layer is None or page.line_layer is None:
+                    continue
+
+                name = self.safe_gpkg_layer_name(page.values().get("name") or page.index)
+                layers.extend([
+                    {
+                        "layer": page.pt_layer,
+                        "name": f"排水_{page.index}_{name}_点",
+                        "style": "mix_haisui_point.qml",
+                    },
+                    {
+                        "layer": page.line_layer,
+                        "name": f"排水_{page.index}_{name}_ライン",
+                        "style": "mix_haisui_line.qml",
+                    },
+                ])
+
+        if not layers:
+            return True
+
+        for i, item in enumerate(layers):
+            options = QgsVectorFileWriter.SaveVectorOptions()
+            options.driverName = "GPKG"
+            options.layerName = item["name"]
+            options.fileEncoding = "UTF-8"
+            options.actionOnExistingFile = (
+                QgsVectorFileWriter.CreateOrOverwriteFile
+                if i == 0
+                else QgsVectorFileWriter.CreateOrOverwriteLayer
+            )
+
+            result = QgsVectorFileWriter.writeAsVectorFormatV3(
+                item["layer"],
+                str(gpkg_path),
+                QgsProject.instance().transformContext(),
+                options,
+            )
+            error_code = result[0]
+            error_message = result[1] if len(result) > 1 else ""
+
+            if error_code != QgsVectorFileWriter.NoError:
+                QMessageBox.warning(
+                    self,
+                    "エラー",
+                    f"GeoPackageへの保存に失敗しました:\n{item['name']}\n{error_message}"
+                )
+                return False
+
+        self.append_output_log(f"GeoPackageを書き込みました: {gpkg_path}")
+        return True
+
+    def safe_gpkg_layer_name(self, value):
+        text = self.clean_html_text(value).strip()
+        for char in '\\/:*?"<>|':
+            text = text.replace(char, "_")
+        text = "_".join(text.split())
+        return text or "layer"
 
     def feature_name_from_expression(self, layer, feature, name_expression):
         name_expression = self.clean_html_text(name_expression).strip()
@@ -1066,10 +1322,6 @@ class Main(QDockWidget, FORM_CLASS):
         # 縮尺をwidgetから読む
         scale = self.scale.scale()
         map_item.setScale(scale)
-
-        # 磁北補正分だけ回転
-        angle = self.jihosei.value()
-        map_item.setMapRotation(angle)
 
         # レイヤ範囲に合わせる
         extent = target_layers[0].extent()
