@@ -18,7 +18,7 @@ class mainDialogPlugin:
         return QCoreApplication.translate("main_dialog.ui", message)
 
     def initGui(self):
-        icon_path = os.path.join(self.plugin_dir, "icon.svg")
+        icon_path = os.path.join(self.plugin_dir, "icon.png")
         self.action = QAction(QIcon(icon_path), self.tr("Minimum Dialog"), self.iface.mainWindow())
         self.action.setCheckable(True)
         self.action.triggered.connect(self.run)

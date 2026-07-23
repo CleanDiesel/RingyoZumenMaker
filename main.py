@@ -1004,7 +1004,11 @@ class Main(QDockWidget, FORM_CLASS):
             map_item.zoomToExtent(extent)
             map_item.setScale(self.scale.scale())
 
-        output_path = Path(self.fileName.filePath()) / "location_map.pdf"
+        self.htmlValues["rinshohan"] = self.rinshohan.text()
+        output_path = (
+            Path(self.fileName.filePath())
+            / f"{self.htmlValues['rinshohan']} - 位置図.pdf"
+        )
         exporter = QgsLayoutExporter(layout)
         settings = QgsLayoutExporter.PdfExportSettings()
         result = exporter.exportToPdf(str(output_path), settings)
