@@ -92,7 +92,7 @@ class Main(QDockWidget, FORM_CLASS):
             self.htmlValues = {}
             self.progressBar.setValue(40)
 
-            if not self.map_make():
+            if not self.map_make(test=test):
                 self.progressBar.setValue(0)
                 return
             
@@ -838,7 +838,7 @@ class Main(QDockWidget, FORM_CLASS):
 
         return model
     
-    def map_make(self):
+    def map_make(self, test=False):
         if self.isShui.isChecked():
             make_layer = self.load_model("make_layer.model3")
 
@@ -881,9 +881,15 @@ class Main(QDockWidget, FORM_CLASS):
                 )
                 return False
 
-            layout = self.create_layout(target_layers=[self.LayerSet['shui']['pt'], self.LayerSet['shui']['line']])
-            if layout:
-                self.export_layout_image(layout, "shui")
+            if not test:
+                layout = self.create_layout(
+                    target_layers=[
+                        self.LayerSet['shui']['pt'],
+                        self.LayerSet['shui']['line'],
+                    ]
+                )
+                if layout:
+                    self.export_layout_image(layout, "shui")
         
         if self.isHaisui.isChecked():
             for page in self.haisuis:
@@ -926,11 +932,14 @@ class Main(QDockWidget, FORM_CLASS):
                     )
                     return False
 
-                layout = self.create_layout(target_layers=[page.pt_layer, page.line_layer])
-                if layout:
-                    self.export_layout_image(layout, f"haisui_{page.index}")
+                if not test:
+                    layout = self.create_layout(
+                        target_layers=[page.pt_layer, page.line_layer]
+                    )
+                    if layout:
+                        self.export_layout_image(layout, f"haisui_{page.index}")
 
-        if self.isShui.isChecked() or self.isHaisui.isChecked():
+        if not test and (self.isShui.isChecked() or self.isHaisui.isChecked()):
             target_layers = []
             if self.isShui.isChecked():
                 target_layers.extend([self.LayerSet['shui']['pt'], self.LayerSet['shui']['line']])
@@ -953,6 +962,12 @@ class Main(QDockWidget, FORM_CLASS):
             layout = self.create_layout(target_layers=target_layers)
             if layout:
                 self.export_layout_image(layout, "mix")
+
+        if test:
+            self.append_output_log(
+                "試算のため地図PNG、位置図PDF、GeoPackageは書き込みません"
+            )
+            return True
 
         if self.isIchizu.isChecked() and not self.export_location_pdf():
             return False
