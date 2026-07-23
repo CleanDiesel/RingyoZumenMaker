@@ -23,6 +23,7 @@ import processing
 from html import escape
 import math
 import shutil
+import tempfile
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), "main_dialog.ui"))
 
@@ -81,12 +82,26 @@ class Main(QDockWidget, FORM_CLASS):
         self.open_output_tab()
         self.clear_output_log()
 
-        if self.validate_inputs():
-            self.save_settings()
+        if not self.validate_inputs():
+            return
 
-            self.progressBar.setValue(0)
+        self.save_settings()
+        self.progressBar.setValue(0)
+
+        final_output_dir = Path(self.fileName.filePath())
+        staging_dir = None
+
+        try:
+            if not test:
+                staging_dir = Path(tempfile.mkdtemp(
+                    prefix=".ringyo_zumen_tmp_",
+                    dir=final_output_dir,
+                ))
+                self._output_dir_override = staging_dir
+                self._final_output_dir = final_output_dir
 
             self.LayerSet = {}
+            self.xy_table_rows = []
             self.progressBar.setValue(20)
 
             self.htmlValues = {}
@@ -95,12 +110,14 @@ class Main(QDockWidget, FORM_CLASS):
             if not self.map_make(test=test):
                 self.progressBar.setValue(0)
                 return
-            
+
             if test:
-                self.make_html(write_file=False)
+                if not self.make_html(write_file=False):
+                    self.progressBar.setValue(0)
+                    return
                 self.progressBar.setValue(100)
                 return
-            
+
             self.progressBar.setValue(60)
 
             if not self.copy_assets():
@@ -108,8 +125,99 @@ class Main(QDockWidget, FORM_CLASS):
                 return
             self.progressBar.setValue(80)
 
-            self.make_html()
+            if not self.make_html():
+                self.progressBar.setValue(0)
+                return
+
+            if not self.commit_staged_output(staging_dir, final_output_dir):
+                self.progressBar.setValue(0)
+                return
+
+            self.append_output_log(f"出力を確定しました: {final_output_dir}")
             self.progressBar.setValue(100)
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "エラー",
+                f"出力処理に失敗しました:\n{e}"
+            )
+            self.progressBar.setValue(0)
+        finally:
+            if hasattr(self, "_output_dir_override"):
+                del self._output_dir_override
+            if hasattr(self, "_final_output_dir"):
+                del self._final_output_dir
+            if staging_dir is not None and staging_dir.exists():
+                shutil.rmtree(staging_dir, ignore_errors=True)
+
+    def output_dir(self):
+        if hasattr(self, "_output_dir_override"):
+            return Path(self._output_dir_override)
+        return Path(self.fileName.filePath())
+
+    def displayed_output_path(self, path):
+        path = Path(path)
+        if not hasattr(self, "_final_output_dir"):
+            return path
+
+        try:
+            relative_path = path.relative_to(self.output_dir())
+        except ValueError:
+            return path
+        return Path(self._final_output_dir) / relative_path
+
+    def commit_staged_output(self, staging_dir, final_output_dir):
+        staging_dir = Path(staging_dir)
+        final_output_dir = Path(final_output_dir)
+        backup_dir = staging_dir / ".backup"
+        staged_files = [
+            path
+            for path in staging_dir.rglob("*")
+            if path.is_file() and backup_dir not in path.parents
+        ]
+        committed = []
+
+        try:
+            for source_path in staged_files:
+                relative_path = source_path.relative_to(staging_dir)
+                target_path = final_output_dir / relative_path
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+
+                backup_path = None
+                if target_path.exists():
+                    backup_path = backup_dir / relative_path
+                    backup_path.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(target_path, backup_path)
+
+                record = {
+                    "target": target_path,
+                    "backup": backup_path,
+                    "installed": False,
+                }
+                committed.append(record)
+                os.replace(source_path, target_path)
+                record["installed"] = True
+        except OSError as e:
+            for record in reversed(committed):
+                target_path = record["target"]
+                backup_path = record["backup"]
+                try:
+                    if record["installed"] and target_path.exists():
+                        target_path.unlink()
+                    if backup_path is not None and backup_path.exists():
+                        target_path.parent.mkdir(parents=True, exist_ok=True)
+                        os.replace(backup_path, target_path)
+                except OSError:
+                    pass
+
+            QMessageBox.warning(
+                self,
+                "エラー",
+                f"完成したファイルを出力先へ反映できません:\n{e}"
+            )
+            return False
+
+        return True
 
     def open_output_tab(self):
         self.tabWidget.setCurrentWidget(self.tab_5)
@@ -272,7 +380,15 @@ class Main(QDockWidget, FORM_CLASS):
     def make_html(self, write_file=True):
         parser = ET.HTMLParser()
         html_path = os.path.join(os.path.dirname(__file__), 'html_shinsoku', 'index.html')
-        root = ET.parse(html_path, parser)
+        try:
+            root = ET.parse(html_path, parser)
+        except (OSError, ET.XMLSyntaxError) as e:
+            QMessageBox.warning(
+                self,
+                "エラー",
+                f"HTMLテンプレートを読み込めません:\n{e}"
+            )
+            return False
 
         self.htmlValues.setdefault("shui_length", 0)
         self.htmlValues.setdefault("area", 0)
@@ -329,16 +445,27 @@ class Main(QDockWidget, FORM_CLASS):
             ),
         )
             
-        output_dir = Path(self.fileName.filePath())
+        output_dir = self.output_dir()
         output_path = str(output_dir / "index.html")
         self.clean_html_tree(root)
         if not write_file:
             self.append_output_log("試算のためHTMLは書き込みません")
-            return
+            return True
 
-        self.append_output_log(f"HTMLを書き込みます: {output_path}")
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(ET.tostring(root, pretty_print=True, encoding="unicode", method="html"))
+        displayed_path = self.displayed_output_path(output_path)
+        self.append_output_log(f"HTMLを書き込みます: {displayed_path}")
+        try:
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(ET.tostring(root, pretty_print=True, encoding="unicode", method="html"))
+        except OSError as e:
+            QMessageBox.warning(
+                self,
+                "エラー",
+                f"HTMLを書き込めません:\n{displayed_path}\n{e}"
+            )
+            return False
+
+        return True
 
     def clean_html_text(self, value):
         if value is None:
@@ -801,6 +928,18 @@ class Main(QDockWidget, FORM_CLASS):
                 "有効な座標参照系を選択してください"
             )
             return
+
+        if (
+            crs_ck.isGeographic()
+            or crs_ck.mapUnits() != QgsUnitTypes.DistanceMeters
+        ):
+            QMessageBox.warning(
+                self,
+                "エラー",
+                "長さと面積を正しく計算するため、"
+                "平面直角座標系などのメートル単位CRSを指定してください"
+            )
+            return
         
         path = self.fileName.filePath()
 
@@ -815,11 +954,11 @@ class Main(QDockWidget, FORM_CLASS):
         p = Path(path)
 
         # フォルダ存在確認
-        if not p.exists():
+        if not p.exists() or not p.is_dir():
             QMessageBox.warning(
                 self,
                 "エラー",
-                "保存先フォルダが存在しません"
+                "保存先には存在するフォルダを指定してください"
             )
             return
 
@@ -858,6 +997,12 @@ class Main(QDockWidget, FORM_CLASS):
                     'pt': result['shui_pt'],
                     'line': result['shui'],
                 }
+                point_count = self.LayerSet['shui']['pt'].featureCount()
+                if point_count < 3:
+                    raise ValueError(
+                        f"抽出後の周囲ポイントは{point_count}点です。"
+                        "周囲図の作成には3点以上必要です"
+                    )
                 shui_area_layer = result['area']
                 self.LayerSet['shui']['pt'].loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "point.qml"))
                 s = self.LayerSet['shui']['pt'].labeling().settings()
@@ -888,8 +1033,10 @@ class Main(QDockWidget, FORM_CLASS):
                         self.LayerSet['shui']['line'],
                     ]
                 )
-                if layout:
-                    self.export_layout_image(layout, "shui")
+                if layout is None:
+                    return False
+                if not self.export_layout_image(layout, "shui"):
+                    return False
         
         if self.isHaisui.isChecked():
             for page in self.haisuis:
@@ -912,6 +1059,12 @@ class Main(QDockWidget, FORM_CLASS):
                     result = processing.run(make_layer, params)
                     page.pt_layer = result['haisui_pt']
                     page.line_layer = result['haisui']
+                    point_count = page.pt_layer.featureCount()
+                    if point_count < 2:
+                        raise ValueError(
+                            f"抽出後のポイントは{point_count}点です。"
+                            "線の作成には2点以上必要です"
+                        )
                     page.pt_layer.loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "point.qml"))
                     s = page.pt_layer.labeling().settings()
                     s.fieldName = values.get('sokuten_label_exp')
@@ -936,8 +1089,10 @@ class Main(QDockWidget, FORM_CLASS):
                     layout = self.create_layout(
                         target_layers=[page.pt_layer, page.line_layer]
                     )
-                    if layout:
-                        self.export_layout_image(layout, f"haisui_{page.index}")
+                    if layout is None:
+                        return False
+                    if not self.export_layout_image(layout, f"haisui_{page.index}"):
+                        return False
 
         if not test and (self.isShui.isChecked() or self.isHaisui.isChecked()):
             target_layers = []
@@ -960,8 +1115,10 @@ class Main(QDockWidget, FORM_CLASS):
                     target_layers.extend([page.pt_layer, page.line_layer])
 
             layout = self.create_layout(target_layers=target_layers)
-            if layout:
-                self.export_layout_image(layout, "mix")
+            if layout is None:
+                return False
+            if not self.export_layout_image(layout, "mix"):
+                return False
 
         if test:
             self.append_output_log(
@@ -1020,22 +1177,24 @@ class Main(QDockWidget, FORM_CLASS):
             map_item.setScale(self.scale.scale())
 
         self.htmlValues["rinshohan"] = self.rinshohan.text()
+        safe_rinshohan = self.safe_file_name(self.htmlValues["rinshohan"])
         output_path = (
-            Path(self.fileName.filePath())
-            / f"{self.htmlValues['rinshohan']} - 位置図.pdf"
+            self.output_dir()
+            / f"{safe_rinshohan} - 位置図.pdf"
         )
         exporter = QgsLayoutExporter(layout)
         settings = QgsLayoutExporter.PdfExportSettings()
         result = exporter.exportToPdf(str(output_path), settings)
+        displayed_path = self.displayed_output_path(output_path)
         if result != QgsLayoutExporter.Success:
             QMessageBox.warning(
                 self,
                 "エラー",
-                f"位置図PDFの保存に失敗しました:\n{output_path}"
+                f"位置図PDFの保存に失敗しました:\n{displayed_path}"
             )
             return False
 
-        self.append_output_log(f"位置図PDFを書き込みました: {output_path}")
+        self.append_output_log(f"位置図PDFを書き込みました: {displayed_path}")
         return True
 
     def location_line_layers(self):
@@ -1073,18 +1232,12 @@ class Main(QDockWidget, FORM_CLASS):
             )
             return None
 
-        project = QgsProject.instance()
-        layout_manager = project.layoutManager()
         layout_name = "location_map"
-        old = layout_manager.layoutByName(layout_name)
-        if old:
-            layout_manager.removeLayout(old)
 
-        layout = QgsPrintLayout(project)
+        layout = QgsPrintLayout(QgsProject.instance())
         layout.initializeDefaults()
         layout.loadFromTemplate(doc, QgsReadWriteContext())
         layout.setName(layout_name)
-        layout_manager.addLayout(layout)
         return layout
 
     def set_location_picture_paths(self, layout, style_dir):
@@ -1158,7 +1311,7 @@ class Main(QDockWidget, FORM_CLASS):
         return extent
 
     def save_result_layers_to_geopackage(self):
-        output_dir = Path(self.fileName.filePath())
+        output_dir = self.output_dir()
         gpkg_path = output_dir / "ringyo_zumen.gpkg"
 
         layers = []
@@ -1226,7 +1379,9 @@ class Main(QDockWidget, FORM_CLASS):
                 )
                 return False
 
-        self.append_output_log(f"GeoPackageを書き込みました: {gpkg_path}")
+        self.append_output_log(
+            f"GeoPackageを書き込みました: {self.displayed_output_path(gpkg_path)}"
+        )
         return True
 
     def safe_gpkg_layer_name(self, value):
@@ -1235,6 +1390,16 @@ class Main(QDockWidget, FORM_CLASS):
             text = text.replace(char, "_")
         text = "_".join(text.split())
         return text or "layer"
+
+    def safe_file_name(self, value):
+        text = self.clean_html_text(value).strip()
+        invalid_chars = set('\\/:*?"<>|')
+        text = "".join(
+            "_" if char in invalid_chars or ord(char) < 32 else char
+            for char in text
+        )
+        text = text.rstrip(". ")
+        return text[:120] or "名称未設定"
 
     def feature_name_from_expression(self, layer, feature, name_expression):
         name_expression = self.clean_html_text(name_expression).strip()
@@ -1304,16 +1469,9 @@ class Main(QDockWidget, FORM_CLASS):
         return f"{truncated:.{decimals}f}"
 
     def create_layout(self, target_layers=None):
-        project = QgsProject.instance()
-        layout_manager = project.layoutManager()
-
-        # 既存レイアウトがあれば削除
         layout_name = "150x150_map"
-        old = layout_manager.layoutByName(layout_name)
-        if old:
-            layout_manager.removeLayout(old)
 
-        layout = QgsPrintLayout(project)
+        layout = QgsPrintLayout(QgsProject.instance())
         layout.initializeDefaults()
         layout.setName(layout_name)
 
@@ -1354,13 +1512,12 @@ class Main(QDockWidget, FORM_CLASS):
         map_item.setScale(scale)  # zoomToExtent後にもう一度縮尺固定
 
         layout.addLayoutItem(map_item)
-        layout_manager.addLayout(layout)
 
         return layout
 
     def copy_assets(self):
         source_dir = Path(__file__).parent / "html_shinsoku" / "asset"
-        output_dir = Path(self.fileName.filePath()) / "asset"
+        output_dir = self.output_dir() / "asset"
         try:
             shutil.copytree(source_dir, output_dir, dirs_exist_ok=True)
         except (OSError, shutil.Error) as e:
@@ -1374,7 +1531,7 @@ class Main(QDockWidget, FORM_CLASS):
         return True
 
     def export_layout_image(self, layout, prefix):
-        output_dir = Path(self.fileName.filePath()) / "asset"
+        output_dir = self.output_dir() / "asset"
         output_dir.mkdir(parents=True, exist_ok=True)
 
         output_path = str(output_dir / f"{prefix}_map.png")
@@ -1387,9 +1544,12 @@ class Main(QDockWidget, FORM_CLASS):
             QMessageBox.warning(
                 self,
                 "エラー",
-                f"地図画像の保存に失敗しました: {output_path}"
+                f"地図画像の保存に失敗しました: "
+                f"{self.displayed_output_path(output_path)}"
             )
-            return
+            return False
+
+        return True
 
 class HaisuiPage(QWidget):
     def __init__(self, index, parent=None):
