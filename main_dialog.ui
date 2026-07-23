@@ -23,7 +23,7 @@
    <item>
     <widget class="QTabWidget" name="tabWidget">
      <property name="currentIndex">
-      <number>0</number>
+      <number>2</number>
      </property>
      <widget class="QWidget" name="tab">
       <property name="sizePolicy">
@@ -339,8 +339,8 @@
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>300</width>
-            <height>226</height>
+            <width>629</width>
+            <height>573</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout_10">
@@ -454,8 +454,8 @@
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>99</width>
-            <height>134</height>
+            <width>98</width>
+            <height>132</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout_12">
@@ -476,8 +476,8 @@
                <rect>
                 <x>0</x>
                 <y>0</y>
-                <width>300</width>
-                <height>328</height>
+                <width>285</width>
+                <height>306</height>
                </rect>
               </property>
               <attribute name="label">
@@ -756,8 +756,8 @@
      <y>123</y>
     </hint>
     <hint type="destinationlabel">
-     <x>344</x>
-     <y>242</y>
+     <x>432</x>
+     <y>227</y>
     </hint>
    </hints>
   </connection>
@@ -772,8 +772,8 @@
      <y>113</y>
     </hint>
     <hint type="destinationlabel">
-     <x>303</x>
-     <y>274</y>
+     <x>391</x>
+     <y>257</y>
     </hint>
    </hints>
   </connection>
@@ -784,12 +784,12 @@
    <slot>setLayer(QgsMapLayer*)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>422</x>
-     <y>294</y>
+     <x>138</x>
+     <y>203</y>
     </hint>
     <hint type="destinationlabel">
-     <x>361</x>
-     <y>401</y>
+     <x>138</x>
+     <y>301</y>
     </hint>
    </hints>
   </connection>
@@ -800,12 +800,12 @@
    <slot>setLayer(QgsMapLayer*)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>375</x>
-     <y>294</y>
+     <x>138</x>
+     <y>203</y>
     </hint>
     <hint type="destinationlabel">
-     <x>254</x>
-     <y>433</y>
+     <x>138</x>
+     <y>301</y>
     </hint>
    </hints>
   </connection>
@@ -816,12 +816,12 @@
    <slot>setEnabled(bool)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>93</x>
-     <y>58</y>
+     <x>101</x>
+     <y>45</y>
     </hint>
     <hint type="destinationlabel">
-     <x>106</x>
-     <y>78</y>
+     <x>101</x>
+     <y>54</y>
     </hint>
    </hints>
   </connection>
@@ -848,12 +848,12 @@
    <slot>show()</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>336</x>
-     <y>627</y>
+     <x>442</x>
+     <y>717</y>
     </hint>
     <hint type="destinationlabel">
-     <x>335</x>
-     <y>316</y>
+     <x>119</x>
+     <y>78</y>
     </hint>
    </hints>
   </connection>
@@ -864,12 +864,28 @@
    <slot>setEnabled(bool)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>247</x>
-     <y>328</y>
+     <x>443</x>
+     <y>386</y>
     </hint>
     <hint type="destinationlabel">
-     <x>261</x>
-     <y>358</y>
+     <x>457</x>
+     <y>413</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>shui_point</sender>
+   <signal>layerChanged(QgsMapLayer*)</signal>
+   <receiver>shui_ex</receiver>
+   <slot>setLayer(QgsMapLayer*)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>370</x>
+     <y>109</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>374</x>
+     <y>139</y>
     </hint>
    </hints>
   </connection>
