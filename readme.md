@@ -69,7 +69,7 @@ git clone https://github.com/CleanDiesel/RingyoZumenMaker.git
 
 長さと面積は、指定したCRSへ再投影したレイヤから計算します。緯度経度などの地理座標系やメートル単位ではないCRSは使用できません。現場の地域に合った平面直角座標系などを指定してください。
 
-推奨CRS：JGD2011 / Japan Plane Rectangular CS I~XIX または JGD 2024 Japan Zone 1~19
+推奨CRS：JGD2011 / Japan Plane Rectangular CS I\~XIX または JGD 2024 Japan Zone 1\~19
 
 ### 3. 周囲実測図
 
