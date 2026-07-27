@@ -13,6 +13,7 @@ from qgis.core import (
     QgsWkbTypes, QgsMapLayerType, QgsVectorLayerSimpleLabeling, QgsMapLayerProxyModel, QgsProcessingModelAlgorithm,
     QgsProject, QgsPrintLayout, QgsLayoutItemMap, QgsLayoutPoint, QgsLayoutSize, QgsUnitTypes, QgsLayoutExporter,
     QgsPalLayerSettings, QgsExpression, QgsExpressionContext, QgsExpressionContextUtils, QgsLayoutItemLabel, QgsLayoutItemPicture,
+    QgsLayoutItemScaleBar,
     QgsSettings, QgsCoordinateReferenceSystem, QgsVectorFileWriter, QgsReadWriteContext,
 )
 from qgis.PyQt import uic
@@ -1176,6 +1177,9 @@ class Main(QDockWidget, FORM_CLASS):
             map_item.zoomToExtent(extent)
             map_item.setScale(self.scale.scale())
 
+        if not self.set_location_scale_bars(layout, map_item):
+            return False
+
         self.htmlValues["rinshohan"] = self.rinshohan.text()
         safe_rinshohan = self.safe_file_name(self.htmlValues["rinshohan"])
         output_path = (
@@ -1244,6 +1248,26 @@ class Main(QDockWidget, FORM_CLASS):
         north_arrow = layout.itemById("方位記号")
         if isinstance(north_arrow, QgsLayoutItemPicture):
             north_arrow.setPicturePath(str(style_dir / "houi2.svg"))
+
+    def set_location_scale_bars(self, layout, map_item):
+        scale_bars = [
+            item
+            for item in layout.items()
+            if isinstance(item, QgsLayoutItemScaleBar)
+        ]
+        if len(scale_bars) != 2:
+            QMessageBox.warning(
+                self,
+                "エラー",
+                "位置図テンプレート内のスケールバーが2つではありません"
+            )
+            return False
+
+        for scale_bar in scale_bars:
+            scale_bar.setLinkedMap(map_item)
+            scale_bar.update()
+
+        return True
 
     def set_location_label_text(self, layout):
         text = "\n".join([
