@@ -28,10 +28,23 @@ QGIS上のポイントレイヤから、林業向けの周囲図および排水�
 
 ## インストール
 
-1. `RingyoZumenMaker.zip` をダウンロードします。
+### gitを使用する場合
+1. プラグインフォルダ内で`git clone`します。
+```
+# 例
+# Windows
+cd $env:APPDATA\QGIS\QGIS4\profiles\default\python\plugins
+git clone https://github.com/CleanDiesel/RingyoZumenMaker.git
+
+# Linux
+cd ~/.local/share/QGIS/QGIS4/profiles/default/python/plugins
+git clone https://github.com/CleanDiesel/RingyoZumenMaker.git
+```
+### zipからインストールする場合
+1. [zip](../../releases/latest)をダウンロードします。
 2. QGISを起動します。
 3. 「プラグイン」タブの「プラグインの管理とインストール」を開きます。
-4. 「ZIPからインストール」でダウンロードした`RingyoZumenMaker.zip` を読み込みます。
+4. 「ZIPからインストール」でダウンロードした`RingyoZumenMaker-(version).zip` を読み込みます。
 
 ## 使用方法
 
