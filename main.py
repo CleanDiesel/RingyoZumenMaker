@@ -1246,12 +1246,10 @@ class Main(QDockWidget, FORM_CLASS):
             )
             return None
 
-        layout_name = "location_map"
-
         layout = QgsPrintLayout(QgsProject.instance())
         layout.initializeDefaults()
         layout.loadFromTemplate(doc, QgsReadWriteContext())
-        layout.setName(layout_name)
+        layout.setName("RingyoZumenMaker temporary location map")
         return layout
 
     def set_location_picture_paths(self, layout, style_dir):
@@ -1503,11 +1501,9 @@ class Main(QDockWidget, FORM_CLASS):
         return f"{truncated:.{decimals}f}"
 
     def create_layout(self, target_layers=None):
-        layout_name = "150x150_map"
-
         layout = QgsPrintLayout(QgsProject.instance())
         layout.initializeDefaults()
-        layout.setName(layout_name)
+        layout.setName("RingyoZumenMaker temporary 150x150 map")
 
         # ページ設定 150 x 150 mm
         page = layout.pageCollection().page(0)
