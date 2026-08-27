@@ -4,7 +4,7 @@ from qgis.PyQt.QtWidgets import (
     QWidget, QLabel, QLineEdit, QDoubleSpinBox, QFormLayout,
     QGroupBox, QGridLayout, QHBoxLayout,
     QRadioButton, QPushButton, QDockWidget, QMessageBox, QCheckBox,
-    QScrollArea
+    QScrollArea, QSizePolicy
 )
 from qgis.PyQt.QtCore import QDate
 from qgis.PyQt.QtXml import QDomDocument
@@ -48,9 +48,19 @@ class Main(QDockWidget, FORM_CLASS):
 
         tab_scroll_area = QScrollArea(content)
         tab_scroll_area.setWidgetResizable(True)
-        tab_scroll_area.setMinimumHeight(100)
+        # Ignore the tab contents' preferred height at layout time.  This
+        # makes the scroll area shrink first and leaves the controls below it
+        # visible even when the dock is short.
+        tab_scroll_area.setMinimumHeight(0)
+        tab_scroll_area.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Ignored,
+        )
         tab_scroll_area.setWidget(self.tabWidget)
         main_layout.insertWidget(0, tab_scroll_area, 1)
+        main_layout.setStretch(0, 1)
+        main_layout.setStretch(1, 0)
+        main_layout.setStretch(2, 0)
 
         self._content_widget = content
         self._tab_scroll_area = tab_scroll_area
@@ -788,7 +798,7 @@ class Main(QDockWidget, FORM_CLASS):
             detail,
             f"detail_haba_{option_panel}",
             option_panel,
-            "排水幅",
+            "幅",
             haba,
             ".//*[@id='crs']/ancestor::div[1]",
         )

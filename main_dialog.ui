@@ -23,7 +23,7 @@
    <item>
     <widget class="QTabWidget" name="tabWidget">
      <property name="currentIndex">
-      <number>2</number>
+      <number>0</number>
      </property>
      <widget class="QWidget" name="tab">
       <property name="sizePolicy">
@@ -195,7 +195,7 @@
           <item row="4" column="1">
            <widget class="QLineEdit" name="haisuiType">
             <property name="enabled">
-             <bool>false</bool>
+             <bool>true</bool>
             </property>
             <property name="text">
              <string>排水</string>
@@ -785,11 +785,11 @@
    <hints>
     <hint type="sourcelabel">
      <x>138</x>
-     <y>203</y>
+     <y>192</y>
     </hint>
     <hint type="destinationlabel">
      <x>138</x>
-     <y>301</y>
+     <y>290</y>
     </hint>
    </hints>
   </connection>
@@ -801,11 +801,11 @@
    <hints>
     <hint type="sourcelabel">
      <x>138</x>
-     <y>203</y>
+     <y>192</y>
     </hint>
     <hint type="destinationlabel">
      <x>138</x>
-     <y>301</y>
+     <y>290</y>
     </hint>
    </hints>
   </connection>
@@ -854,22 +854,6 @@
     <hint type="destinationlabel">
      <x>119</x>
      <y>78</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>isJochikeisan</sender>
-   <signal>toggled(bool)</signal>
-   <receiver>haisuiType</receiver>
-   <slot>setEnabled(bool)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>443</x>
-     <y>386</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>457</x>
-     <y>413</y>
     </hint>
    </hints>
   </connection>
