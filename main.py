@@ -7,6 +7,7 @@ from qgis.PyQt.QtWidgets import (
     QScrollArea, QSizePolicy
 )
 from qgis.PyQt.QtCore import QDate
+from qgis.PyQt.QtGui import QColor
 from qgis.PyQt.QtXml import QDomDocument
 from qgis.gui import QgsMapLayerComboBox, QgsFieldExpressionWidget, QgsFieldComboBox
 from qgis.core import (
@@ -78,6 +79,7 @@ class Main(QDockWidget, FORM_CLASS):
             lambda: self.on_submit(test=True)
         )
 
+        self.setup_color_buttons()
         self.setup_haisui_toolbox()
         self.restore_settings()
 
@@ -244,6 +246,50 @@ class Main(QDockWidget, FORM_CLASS):
     def get_haisui_values(self):
         return [page.values() for page in self.haisuis]
 
+    def setup_color_buttons(self):
+        for button in (self.shui_color, self.haisui_color):
+            button.setShowNull(True, "空欄（既定色）")
+            button.setToNull()
+
+    def selected_color(self, button):
+        if button.isNull():
+            return None
+
+        color = button.color()
+        return color if color.isValid() else None
+
+    def apply_layer_color(self, layer, color, include_labels=False):
+        if layer is None or color is None:
+            return
+
+        renderer = layer.renderer()
+        symbol = renderer.symbol() if renderer is not None else None
+        if symbol is not None:
+            symbol.setColor(color)
+
+        if include_labels:
+            labeling = layer.labeling()
+            if labeling is not None:
+                settings = labeling.settings()
+                text_format = settings.format()
+                text_format.setColor(color)
+                settings.setFormat(text_format)
+
+                current_callout = settings.callout()
+                callout = current_callout.clone() if current_callout is not None else None
+                line_symbol = (
+                    callout.lineSymbol()
+                    if callout is not None and hasattr(callout, "lineSymbol")
+                    else None
+                )
+                if line_symbol is not None:
+                    line_symbol.setColor(color)
+                    settings.setCallout(callout)
+
+                layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
+
+        layer.triggerRepaint()
+
     def settings_key(self, name):
         return f"zumen/{name}"
 
@@ -271,6 +317,12 @@ class Main(QDockWidget, FORM_CLASS):
         settings.setValue(self.settings_key("isIchizu"), self.isIchizu.isChecked())
         settings.setValue(self.settings_key("isShui"), self.isShui.isChecked())
         settings.setValue(self.settings_key("isHaisui"), self.isHaisui.isChecked())
+        for name in ("shui_color", "haisui_color"):
+            color = self.selected_color(getattr(self, name))
+            settings.setValue(
+                self.settings_key(name),
+                color.name() if color is not None else "",
+            )
 
     def restore_settings(self):
         settings = QgsSettings()
@@ -319,6 +371,12 @@ class Main(QDockWidget, FORM_CLASS):
         self.isIchizu.setChecked(self.settings_bool(settings, "isIchizu", False))
         self.isShui.setChecked(self.settings_bool(settings, "isShui", False))
         self.isHaisui.setChecked(self.settings_bool(settings, "isHaisui", False))
+
+        for name in ("shui_color", "haisui_color"):
+            value = settings.value(self.settings_key(name), "")
+            color = QColor(str(value)) if value else QColor()
+            if color.isValid():
+                getattr(self, name).setColor(color)
 
     def settings_bool(self, settings, name, default=False):
         value = settings.value(self.settings_key(name), default)
@@ -1123,6 +1181,17 @@ class Main(QDockWidget, FORM_CLASS):
                     s.isExpression = True
                     page.line_layer.setLabeling(QgsVectorLayerSimpleLabeling(s))
                     page.line_layer.setLabelsEnabled(True)
+                    if not self.isShui.isChecked():
+                        self.apply_layer_color(
+                            page.pt_layer,
+                            QColor("black"),
+                            include_labels=True,
+                        )
+                        self.apply_layer_color(
+                            page.line_layer,
+                            QColor("black"),
+                            include_labels=True,
+                        )
                     target_layers.extend([page.pt_layer, page.line_layer])
 
             layout = self.create_layout(target_layers=target_layers)
@@ -1153,11 +1222,19 @@ class Main(QDockWidget, FORM_CLASS):
         style_dir = Path(__file__).parent / "styles"
         if self.isShui.isChecked():
             self.LayerSet["shui"]["line"].loadNamedStyle(str(style_dir / "location_shui.qml"))
+            self.apply_layer_color(
+                self.LayerSet["shui"]["line"],
+                self.selected_color(self.shui_color),
+            )
 
         if self.isHaisui.isChecked():
             for page in self.haisuis:
                 if page.line_layer is not None:
                     page.line_layer.loadNamedStyle(str(style_dir / "location_haisui.qml"))
+                    self.apply_layer_color(
+                        page.line_layer,
+                        self.selected_color(self.haisui_color),
+                    )
 
         template_path = style_dir / "location.qpt"
         layout = self.create_location_layout_from_template(template_path)

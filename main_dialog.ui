@@ -152,6 +152,35 @@
         </widget>
        </item>
        <item>
+        <widget class="QGroupBox" name="groupBox_7">
+         <property name="enabled">
+          <bool>true</bool>
+         </property>
+         <property name="title">
+          <string>表</string>
+         </property>
+         <layout class="QFormLayout" name="formLayout_5">
+          <item row="0" column="0">
+           <widget class="QLabel" name="Label">
+            <property name="text">
+             <string>小数点以下座標表示桁数</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QSpinBox" name="ketasu">
+            <property name="maximum">
+             <number>9</number>
+            </property>
+            <property name="value">
+             <number>5</number>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
         <widget class="QGroupBox" name="groupBox_6">
          <property name="title">
           <string>地図</string>
@@ -202,53 +231,58 @@
             </property>
            </widget>
           </item>
-          <item row="5" column="0">
-           <widget class="QLabel" name="qgisLabel">
-            <property name="text">
-             <string/>
-            </property>
-           </widget>
-          </item>
-          <item row="7" column="1">
-           <widget class="QCheckBox" name="isIchizu">
-            <property name="text">
-             <string>する</string>
-            </property>
-           </widget>
-          </item>
-          <item row="7" column="0">
+          <item row="8" column="0">
            <widget class="QLabel" name="label_9">
             <property name="text">
              <string>位置図の生成</string>
             </property>
            </widget>
           </item>
-         </layout>
-        </widget>
-       </item>
-       <item>
-        <widget class="QGroupBox" name="groupBox_7">
-         <property name="enabled">
-          <bool>true</bool>
-         </property>
-         <property name="title">
-          <string>表</string>
-         </property>
-         <layout class="QFormLayout" name="formLayout_5">
-          <item row="0" column="0">
-           <widget class="QLabel" name="Label">
+          <item row="8" column="1">
+           <widget class="QCheckBox" name="isIchizu">
             <property name="text">
-             <string>小数点以下座標表示桁数</string>
+             <string>する</string>
             </property>
            </widget>
           </item>
-          <item row="0" column="1">
-           <widget class="QSpinBox" name="ketasu">
-            <property name="maximum">
-             <number>9</number>
+          <item row="12" column="0">
+           <widget class="QLabel" name="qgisLabel">
+            <property name="text">
+             <string/>
             </property>
-            <property name="value">
-             <number>5</number>
+           </widget>
+          </item>
+          <item row="10" column="0">
+           <widget class="QLabel" name="label_14">
+            <property name="text">
+             <string>位置図排水・林内路網色</string>
+            </property>
+           </widget>
+          </item>
+          <item row="10" column="1">
+           <widget class="QgsColorButton" name="haisui_color">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+           </widget>
+          </item>
+          <item row="9" column="0">
+           <widget class="QLabel" name="label_16">
+            <property name="text">
+             <string>位置図周囲色</string>
+            </property>
+           </widget>
+          </item>
+          <item row="9" column="1">
+           <widget class="QgsColorButton" name="shui_color">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
             </property>
            </widget>
           </item>
@@ -454,8 +488,8 @@
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>98</width>
-            <height>132</height>
+            <width>629</width>
+            <height>573</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout_12">
@@ -476,8 +510,8 @@
                <rect>
                 <x>0</x>
                 <y>0</y>
-                <width>285</width>
-                <height>306</height>
+                <width>611</width>
+                <height>495</height>
                </rect>
               </property>
               <attribute name="label">
@@ -701,6 +735,11 @@
   </layout>
  </widget>
  <customwidgets>
+  <customwidget>
+   <class>QgsColorButton</class>
+   <extends>QToolButton</extends>
+   <header>qgscolorbutton.h</header>
+  </customwidget>
   <customwidget>
    <class>QgsFieldExpressionWidget</class>
    <extends>QWidget</extends>
