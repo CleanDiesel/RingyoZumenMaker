@@ -18,14 +18,14 @@
       </Option>
       <Option name="component_description" type="QString" value="X/Yフィールドを追加"/>
       <Option name="component_height" type="double" value="30"/>
-      <Option name="component_pos_x" type="double" value="-8.49837837837839"/>
-      <Option name="component_pos_y" type="double" value="-351.51243243243243"/>
+      <Option name="component_pos_x" type="double" value="-2.9718918918919"/>
+      <Option name="component_pos_y" type="double" value="-296.24756756756756"/>
       <Option name="component_width" type="double" value="200"/>
       <Option name="dependencies"/>
       <Option name="id" type="QString" value="native:addxyfields_1"/>
       <Option name="outputs"/>
       <Option name="outputs_collapsed" type="bool" value="false"/>
-      <Option name="parameters_collapsed" type="bool" value="true"/>
+      <Option name="parameters_collapsed" type="bool" value="false"/>
       <Option name="params" type="Map">
         <Option name="CRS" type="List">
           <Option type="Map">
@@ -35,7 +35,7 @@
         </Option>
         <Option name="INPUT" type="List">
           <Option type="Map">
-            <Option name="child_id" type="QString" value="native:reprojectlayer_1"/>
+            <Option name="child_id" type="QString" value="native:setzvalue_1"/>
             <Option name="output_name" type="QString" value="OUTPUT"/>
             <Option name="source" type="int" value="1"/>
           </Option>
@@ -378,6 +378,47 @@
         </Option>
       </Option>
     </Option>
+    <Option name="native:setzvalue_1" type="Map">
+      <Option name="active" type="bool" value="true"/>
+      <Option name="alg_config"/>
+      <Option name="alg_id" type="QString" value="native:setzvalue"/>
+      <Option name="color" type="QString" value=""/>
+      <Option name="comment" type="Map">
+        <Option name="color" type="QString" value=""/>
+        <Option name="component_description" type="QString" value=""/>
+        <Option name="component_height" type="double" value="60"/>
+        <Option name="component_pos_x" type="double" value="411.5016216216216"/>
+        <Option name="component_pos_y" type="double" value="6"/>
+        <Option name="component_width" type="double" value="100"/>
+        <Option name="outputs_collapsed" type="bool" value="false"/>
+        <Option name="parameters_collapsed" type="bool" value="false"/>
+      </Option>
+      <Option name="component_description" type="QString" value="Z値を設定"/>
+      <Option name="component_height" type="double" value="30"/>
+      <Option name="component_pos_x" type="double" value="10.705945945946013"/>
+      <Option name="component_pos_y" type="double" value="-500.72756756756746"/>
+      <Option name="component_width" type="double" value="200"/>
+      <Option name="dependencies"/>
+      <Option name="id" type="QString" value="native:setzvalue_1"/>
+      <Option name="outputs"/>
+      <Option name="outputs_collapsed" type="bool" value="false"/>
+      <Option name="parameters_collapsed" type="bool" value="false"/>
+      <Option name="params" type="Map">
+        <Option name="INPUT" type="List">
+          <Option type="Map">
+            <Option name="child_id" type="QString" value="native:reprojectlayer_1"/>
+            <Option name="output_name" type="QString" value="OUTPUT"/>
+            <Option name="source" type="int" value="1"/>
+          </Option>
+        </Option>
+        <Option name="Z_VALUE" type="List">
+          <Option type="Map">
+            <Option name="expression" type="QString" value="to_real( @elevation )"/>
+            <Option name="source" type="int" value="3"/>
+          </Option>
+        </Option>
+      </Option>
+    </Option>
   </Option>
   <Option name="designerParameterValues"/>
   <Option name="groupBoxes"/>
@@ -416,6 +457,18 @@
       <Option name="metadata"/>
       <Option name="name" type="QString" value="crs"/>
       <Option name="parameter_type" type="QString" value="crs"/>
+    </Option>
+    <Option name="elevation" type="Map">
+      <Option name="default" type="QString" value=""/>
+      <Option name="defaultGui" type="invalid"/>
+      <Option name="description" type="QString" value="elevation"/>
+      <Option name="expression_type" type="int" value="0"/>
+      <Option name="flags" type="int" value="8"/>
+      <Option name="help" type="QString" value=""/>
+      <Option name="metadata"/>
+      <Option name="name" type="QString" value="elevation"/>
+      <Option name="parameter_type" type="QString" value="expression"/>
+      <Option name="parent_layer" type="QString" value="gpx"/>
     </Option>
     <Option name="gpx" type="Map">
       <Option name="data_types"/>
@@ -512,6 +565,27 @@
       <Option name="outputs_collapsed" type="bool" value="true"/>
       <Option name="parameters_collapsed" type="bool" value="true"/>
     </Option>
+    <Option name="elevation" type="Map">
+      <Option name="color" type="QString" value=""/>
+      <Option name="comment" type="Map">
+        <Option name="color" type="QString" value=""/>
+        <Option name="component_description" type="QString" value=""/>
+        <Option name="component_height" type="double" value="60"/>
+        <Option name="component_pos_x" type="double" value="-856.48"/>
+        <Option name="component_pos_y" type="double" value="-547.9102702702703"/>
+        <Option name="component_width" type="double" value="100"/>
+        <Option name="outputs_collapsed" type="bool" value="false"/>
+        <Option name="parameters_collapsed" type="bool" value="false"/>
+      </Option>
+      <Option name="component_description" type="QString" value="elevation"/>
+      <Option name="component_height" type="double" value="30"/>
+      <Option name="component_pos_x" type="double" value="-854.7632432432434"/>
+      <Option name="component_pos_y" type="double" value="-547.1221621621621"/>
+      <Option name="component_width" type="double" value="200"/>
+      <Option name="name" type="QString" value="elevation"/>
+      <Option name="outputs_collapsed" type="bool" value="false"/>
+      <Option name="parameters_collapsed" type="bool" value="false"/>
+    </Option>
     <Option name="gpx" type="Map">
       <Option name="color" type="QString" value=""/>
       <Option name="comment" type="Map">
@@ -568,8 +642,8 @@
       </Option>
       <Option name="component_description" type="QString" value="order"/>
       <Option name="component_height" type="double" value="30"/>
-      <Option name="component_pos_x" type="double" value="-851"/>
-      <Option name="component_pos_y" type="double" value="-426"/>
+      <Option name="component_pos_x" type="double" value="-736.785945945946"/>
+      <Option name="component_pos_y" type="double" value="-427.84216216216214"/>
       <Option name="component_width" type="double" value="200"/>
       <Option name="name" type="QString" value="order"/>
       <Option name="outputs_collapsed" type="bool" value="false"/>
