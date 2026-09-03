@@ -4,18 +4,19 @@ from qgis.PyQt.QtWidgets import (
     QWidget, QLabel, QLineEdit, QDoubleSpinBox, QFormLayout,
     QGroupBox, QGridLayout, QHBoxLayout,
     QRadioButton, QPushButton, QDockWidget, QMessageBox, QCheckBox,
-    QScrollArea, QSizePolicy
+    QScrollArea, QSizePolicy, QFileDialog
 )
-from qgis.PyQt.QtCore import QDate
-from qgis.PyQt.QtGui import QColor
+from qgis.PyQt.QtCore import QDate, QVariant
+from qgis.PyQt.QtGui import QColor, QFont
 from qgis.PyQt.QtXml import QDomDocument
 from qgis.gui import QgsMapLayerComboBox, QgsFieldExpressionWidget, QgsFieldComboBox
 from qgis.core import (
-    QgsWkbTypes, QgsMapLayerType, QgsVectorLayerSimpleLabeling, QgsMapLayerProxyModel, QgsProcessingModelAlgorithm,
+    Qgis, QgsWkbTypes, QgsMapLayerType, QgsVectorLayerSimpleLabeling, QgsMapLayerProxyModel, QgsProcessingModelAlgorithm,
     QgsProject, QgsPrintLayout, QgsLayoutItemMap, QgsLayoutPoint, QgsLayoutSize, QgsUnitTypes, QgsLayoutExporter,
     QgsPalLayerSettings, QgsExpression, QgsExpressionContext, QgsExpressionContextUtils, QgsLayoutItemLabel, QgsLayoutItemPicture,
     QgsLayoutItemScaleBar,
     QgsSettings, QgsCoordinateReferenceSystem, QgsVectorFileWriter, QgsReadWriteContext,
+    QgsFeature, QgsField, QgsGeometry, QgsVectorLayer,
 )
 from qgis.PyQt import uic
 import os
@@ -26,6 +27,7 @@ from html import escape
 import math
 import shutil
 import tempfile
+import json
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), "main_dialog.ui"))
 
@@ -79,9 +81,15 @@ class Main(QDockWidget, FORM_CLASS):
             lambda: self.on_submit(test=True)
         )
 
+        self.readConfig.clicked.connect(self.load_config_dialog)
+        self.saveConfig.setFilter("設定ファイル (*.config)")
+        self.isSaveConfig.currentIndexChanged.connect(self.update_save_config_enabled)
+
         self.setup_color_buttons()
+        self.setup_shui_toolbox()
         self.setup_haisui_toolbox()
         self.restore_settings()
+        self.update_save_config_enabled()
 
         # Dynamic controls above affect the tab's required height.  Preserve
         # that height inside the tab scroll area instead of forcing the whole
@@ -143,6 +151,10 @@ class Main(QDockWidget, FORM_CLASS):
                 return
 
             if not self.commit_staged_output(staging_dir, final_output_dir):
+                self.progressBar.setValue(0)
+                return
+
+            if not self.save_config_file():
                 self.progressBar.setValue(0)
                 return
 
@@ -235,13 +247,345 @@ class Main(QDockWidget, FORM_CLASS):
     def open_output_tab(self):
         self.tabWidget.setCurrentWidget(self.tab_5)
 
-    def get_shui_values(self):
+    def layer_reference(self, layer):
+        if layer is None:
+            return None
         return {
-            "point_layer": self.shui_point.currentLayer(),
-            "filter_exp": self.shui_ex.expression(),
-            "sokuten_label_exp": self.shui_sokutenLabel.expression(),
-            "sort_exp": self.shui_sort.expression(),
+            "id": layer.id(),
+            "name": layer.name(),
+            "source": layer.source(),
+            "provider": layer.providerType(),
         }
+
+    def resolve_layer_reference(self, reference):
+        if not isinstance(reference, dict):
+            return None
+
+        project = QgsProject.instance()
+        layer_id = self.clean_html_text(reference.get("id"))
+        if layer_id:
+            layer = project.mapLayer(layer_id)
+            if layer is not None:
+                return layer
+
+        source = self.clean_html_text(reference.get("source"))
+        provider = self.clean_html_text(reference.get("provider"))
+        name = self.clean_html_text(reference.get("name"))
+        layers = list(project.mapLayers().values())
+        if source:
+            for layer in layers:
+                if layer.source() == source and (not provider or layer.providerType() == provider):
+                    return layer
+        if name:
+            for layer in layers:
+                if layer.name() == name:
+                    return layer
+        return None
+
+    def serialize_shui_pages(self):
+        pages = []
+        for page in self.shuis:
+            values = page.values()
+            pages.append({
+                "name": values.get("name", ""),
+                "layer": self.layer_reference(values.get("point_layer")),
+                "filter_expression": values.get("filter_exp", ""),
+                "point_name_expression": values.get("sokuten_label_exp", ""),
+                "sort_expression": values.get("sort_exp", ""),
+            })
+        return pages
+
+    def serialize_haisui_pages(self):
+        pages = []
+        for page in self.haisuis:
+            values = page.values()
+            pages.append({
+                "name": values.get("name", ""),
+                "width": values.get("haba", 0.0),
+                "deduct_area": bool(values.get("is_jochi")),
+                "layer": self.layer_reference(values.get("point_layer")),
+                "filter_expression": values.get("filter_exp", ""),
+                "point_name_expression": values.get("sokuten_label_exp", ""),
+                "sort_expression": values.get("sort_exp", ""),
+            })
+        return pages
+
+    def configuration_data(self):
+        return {
+            "format": "RingyoZumenMaker.config",
+            "version": 1,
+            "basic": {
+                "survey_date": self.sokuryobi.date().toString("yyyy-MM-dd"),
+                "surveyor": self.sokuryosha.text(),
+                "survey_company": self.sokuryojigyosha.text(),
+                "drawing_date": self.seizubi.date().toString("yyyy-MM-dd"),
+                "drawing_company": self.seizujigyosha.text(),
+                "draftsperson": self.seizusha.text(),
+                "forest_compartment": self.rinshohan.text(),
+                "forest_owner": self.sanrinshoyusha.text(),
+            },
+            "map": {
+                "coordinate_decimals": self.ketasu.value(),
+                "scale": self.scale.scale(),
+                "crs": self.crs.crs().authid(),
+                "show_deduction": self.isJochikeisan.isChecked(),
+                "drainage_type": self.haisuiType.text(),
+                "create_location_map": self.isIchizu.isChecked(),
+                "perimeter_color": self.color_to_config(self.selected_color(self.shui_color)),
+                "drainage_color": self.color_to_config(self.selected_color(self.haisui_color)),
+            },
+            "output": {
+                "directory": self.fileName.filePath(),
+                "config_save_mode": self.isSaveConfig.currentIndex(),
+                "config_file": self.saveConfig.filePath(),
+            },
+            "perimeters": {
+                "enabled": self.isShui.isChecked(),
+                "items": self.serialize_shui_pages(),
+            },
+            "drainage": {
+                "enabled": self.isHaisui.isChecked(),
+                "items": self.serialize_haisui_pages(),
+            },
+        }
+
+    def color_to_config(self, color):
+        if color is None or not color.isValid():
+            return ""
+        return color.name(QColor.NameFormat.HexArgb)
+
+    def set_color_from_config(self, button, value):
+        text = self.clean_html_text(value).strip()
+        if not text:
+            button.setToNull()
+            return
+        color = QColor(text)
+        if color.isValid():
+            button.setColor(color)
+        else:
+            button.setToNull()
+
+    def update_save_config_enabled(self, *_):
+        self.saveConfig.setEnabled(self.isSaveConfig.currentIndex() == 2)
+
+    def selected_config_output_path(self):
+        mode = self.isSaveConfig.currentIndex()
+        if mode == 0:
+            return None
+        if mode == 1:
+            return Path(self.fileName.filePath()) / "input.config"
+
+        raw_path = self.saveConfig.filePath().strip()
+        if not raw_path:
+            raise ValueError("設定保存ファイルを指定してください")
+        path = Path(raw_path)
+        if path.suffix.lower() != ".config":
+            path = Path(f"{path}.config")
+            self.saveConfig.setFilePath(str(path))
+        return path
+
+    def save_config_file(self):
+        try:
+            path = self.selected_config_output_path()
+        except ValueError as e:
+            QMessageBox.warning(self, "エラー", str(e))
+            return False
+        if path is None:
+            return True
+        if not path.parent.exists() or not path.parent.is_dir():
+            QMessageBox.warning(self, "エラー", f"設定ファイルの保存先フォルダがありません:\n{path.parent}")
+            return False
+
+        temp_path = None
+        try:
+            file_descriptor, temp_name = tempfile.mkstemp(
+                prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent)
+            )
+            temp_path = Path(temp_name)
+            with os.fdopen(file_descriptor, "w", encoding="utf-8") as config_file:
+                json.dump(self.configuration_data(), config_file, ensure_ascii=False, indent=2)
+                config_file.write("\n")
+            os.replace(temp_path, path)
+        except (OSError, TypeError, ValueError) as e:
+            if temp_path is not None and temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
+            QMessageBox.warning(self, "エラー", f"設定ファイルを保存できません:\n{path}\n{e}")
+            return False
+
+        self.append_output_log(f"設定ファイルを書き込みました: {path}")
+        self.save_settings()
+        return True
+
+    def load_config_dialog(self):
+        settings = QgsSettings()
+        initial_path = self.clean_html_text(
+            settings.value(self.settings_key("lastReadConfig"), self.saveConfig.filePath())
+        )
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "設定ファイルを読み込む",
+            initial_path,
+            "設定ファイル (*.config);;すべてのファイル (*)",
+        )
+        if not path:
+            return
+        if self.load_config_file(path):
+            settings.setValue(self.settings_key("lastReadConfig"), path)
+            self.save_settings()
+
+    def load_config_file(self, path):
+        path = Path(path)
+        try:
+            with open(path, "r", encoding="utf-8") as config_file:
+                data = json.load(config_file)
+        except (OSError, UnicodeError, json.JSONDecodeError) as e:
+            QMessageBox.warning(self, "エラー", f"設定ファイルを読み込めません:\n{path}\n{e}")
+            return False
+
+        if not isinstance(data, dict) or data.get("format") != "RingyoZumenMaker.config":
+            QMessageBox.warning(self, "エラー", f"RingyoZumenMakerの設定ファイルではありません:\n{path}")
+            return False
+        try:
+            missing_layers = self.apply_configuration(data)
+        except (AttributeError, TypeError, ValueError) as e:
+            QMessageBox.warning(self, "エラー", f"設定ファイルの内容を反映できません:\n{path}\n{e}")
+            return False
+
+        self.append_output_log(f"設定ファイルを読み込みました: {path}")
+        if missing_layers:
+            QMessageBox.warning(
+                self,
+                "設定読み込み",
+                "次のポイントレイヤは現在のプロジェクトで見つからないため、空欄にしました:\n"
+                + "\n".join(missing_layers),
+            )
+        return True
+
+    def apply_configuration(self, data):
+        basic = data.get("basic") if isinstance(data.get("basic"), dict) else {}
+        map_settings = data.get("map") if isinstance(data.get("map"), dict) else {}
+        output = data.get("output") if isinstance(data.get("output"), dict) else {}
+        perimeters = data.get("perimeters") if isinstance(data.get("perimeters"), dict) else {}
+        drainage = data.get("drainage") if isinstance(data.get("drainage"), dict) else {}
+
+        text_values = {
+            "sokuryosha": basic.get("surveyor", ""),
+            "sokuryojigyosha": basic.get("survey_company", ""),
+            "seizujigyosha": basic.get("drawing_company", ""),
+            "seizusha": basic.get("draftsperson", ""),
+            "rinshohan": basic.get("forest_compartment", ""),
+            "sanrinshoyusha": basic.get("forest_owner", ""),
+            "haisuiType": map_settings.get("drainage_type", ""),
+        }
+        for widget_name, value in text_values.items():
+            getattr(self, widget_name).setText(self.clean_html_text(value))
+
+        self.set_date_from_config(self.sokuryobi, basic.get("survey_date", ""))
+        self.set_date_from_config(self.seizubi, basic.get("drawing_date", ""))
+
+        decimals = map_settings.get("coordinate_decimals", self.ketasu.minimum())
+        self.ketasu.setValue(int(decimals or 0))
+        scale = map_settings.get("scale")
+        if scale not in (None, ""):
+            self.scale.setScale(float(scale))
+        crs_text = self.clean_html_text(map_settings.get("crs"))
+        if crs_text:
+            crs = QgsCoordinateReferenceSystem(crs_text)
+            if crs.isValid():
+                self.crs.setCrs(crs)
+
+        self.isJochikeisan.setChecked(bool(map_settings.get("show_deduction", False)))
+        self.isIchizu.setChecked(bool(map_settings.get("create_location_map", False)))
+        self.set_color_from_config(self.shui_color, map_settings.get("perimeter_color", ""))
+        self.set_color_from_config(self.haisui_color, map_settings.get("drainage_color", ""))
+        self.fileName.setFilePath(self.clean_html_text(output.get("directory")))
+        self.saveConfig.setFilePath(self.clean_html_text(output.get("config_file")))
+        try:
+            save_mode = int(output.get("config_save_mode", 0) or 0)
+        except (TypeError, ValueError):
+            save_mode = 0
+        self.isSaveConfig.setCurrentIndex(save_mode if save_mode in (0, 1, 2) else 0)
+        self.update_save_config_enabled()
+
+        missing_layers = []
+        missing_layers.extend(self.restore_shui_pages_from_config(perimeters.get("items", [])))
+        missing_layers.extend(self.restore_haisui_pages_from_config(drainage.get("items", [])))
+        self.isShui.setChecked(bool(perimeters.get("enabled", False)))
+        self.isHaisui.setChecked(bool(drainage.get("enabled", False)))
+        return missing_layers
+
+    def set_date_from_config(self, widget, value):
+        date = QDate.fromString(self.clean_html_text(value), "yyyy-MM-dd")
+        if date.isValid():
+            widget.setDate(date)
+
+    def clear_shui_pages(self):
+        while self.shuiToolBox.count() > 0:
+            widget = self.shuiToolBox.widget(0)
+            self.shuiToolBox.removeItem(0)
+            if widget is not None:
+                widget.deleteLater()
+        self.shuis = []
+        self.shui_count = 0
+
+    def restore_shui_pages_from_config(self, items):
+        if not isinstance(items, list):
+            raise ValueError("周囲の設定形式が正しくありません")
+        self.clear_shui_pages()
+        missing_layers = []
+        for item in items:
+            if not isinstance(item, dict):
+                raise ValueError("周囲の設定形式が正しくありません")
+            self.add_shui_page()
+            page = self.shuis[-1]
+            page.name_edit.setText(self.clean_html_text(item.get("name")))
+            reference = item.get("layer")
+            layer = self.resolve_layer_reference(reference)
+            page.point_layer.setLayer(layer)
+            page.filter_exp.setExpression(self.clean_html_text(item.get("filter_expression")))
+            page.sokuten_label_exp.setExpression(self.clean_html_text(item.get("point_name_expression")))
+            page.sort_exp.setExpression(self.clean_html_text(item.get("sort_expression")))
+            if isinstance(reference, dict) and layer is None:
+                missing_layers.append(f"周囲 {page.index}: {reference.get('name', '')}")
+        return missing_layers
+
+    def clear_haisui_pages(self):
+        while self.toolBox.count() > 0:
+            widget = self.toolBox.widget(0)
+            self.toolBox.removeItem(0)
+            if widget is not None:
+                widget.deleteLater()
+        self.haisuis = []
+        self.haisui_count = 0
+
+    def restore_haisui_pages_from_config(self, items):
+        if not isinstance(items, list):
+            raise ValueError("排水・林内路網の設定形式が正しくありません")
+        self.clear_haisui_pages()
+        missing_layers = []
+        for item in items:
+            if not isinstance(item, dict):
+                raise ValueError("排水・林内路網の設定形式が正しくありません")
+            self.add_haisui_page()
+            page = self.haisuis[-1]
+            page.name_edit.setText(self.clean_html_text(item.get("name")))
+            page.haba_spin.setValue(float(item.get("width") or 0.0))
+            page.is_jochi.setChecked(bool(item.get("deduct_area", False)))
+            reference = item.get("layer")
+            layer = self.resolve_layer_reference(reference)
+            page.point_layer.setLayer(layer)
+            page.filter_exp.setExpression(self.clean_html_text(item.get("filter_expression")))
+            page.sokuten_label_exp.setExpression(self.clean_html_text(item.get("point_name_expression")))
+            page.sort_exp.setExpression(self.clean_html_text(item.get("sort_expression")))
+            if isinstance(reference, dict) and layer is None:
+                missing_layers.append(f"排水・林内路網 {page.index}: {reference.get('name', '')}")
+        return missing_layers
+
+    def get_shui_values(self):
+        return [page.values() for page in self.shuis]
 
     def get_haisui_values(self):
         return [page.values() for page in self.haisuis]
@@ -290,10 +634,95 @@ class Main(QDockWidget, FORM_CLASS):
 
         layer.triggerRepaint()
 
+    def configure_mix_line_label(self, layer, name, color=None):
+        layer.loadNamedStyle(
+            os.path.join(os.path.dirname(__file__), "styles", "mix_haisui_line.qml")
+        )
+        label_text = self.clean_html_text(name).strip()
+        if label_text:
+            labeling = layer.labeling()
+            settings = labeling.settings() if labeling else QgsPalLayerSettings()
+            escaped_text = label_text.replace("'", "''")
+            settings.fieldName = f"'{escaped_text}'"
+            settings.isExpression = True
+            layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
+            layer.setLabelsEnabled(True)
+        else:
+            # ラベルを無効化すれば、同じラベル設定に属する引き出し線も描画されない。
+            layer.setLabelsEnabled(False)
+        self.apply_layer_color(layer, color, include_labels=True)
+
+    def create_mix_perimeter_label_layer(self, pages):
+        """Create one obstacle-aware polygon layer for all perimeter callouts."""
+        named_pages = [
+            page for page in pages
+            if page.line_layer is not None
+            and self.clean_html_text(page.values().get("name")).strip()
+        ]
+        if not named_pages:
+            return None
+
+        crs = named_pages[0].line_layer.crs()
+        label_layer = QgsVectorLayer(
+            f"MultiPolygon?crs={crs.authid()}",
+            "周囲名（配置用）",
+            "memory",
+        )
+        provider = label_layer.dataProvider()
+        provider.addAttributes([QgsField("label", QVariant.String)])
+        label_layer.updateFields()
+
+        for page in named_pages:
+            name = self.clean_html_text(page.values().get("name")).strip()
+            for source_feature in page.line_layer.getFeatures():
+                geometry = source_feature.geometry()
+                parts = geometry.asMultiPolyline() if geometry.isMultipart() else [geometry.asPolyline()]
+                closed_parts = [part for part in parts if len(part) >= 4 and part[0] == part[-1]]
+                if not closed_parts:
+                    continue
+
+                feature = QgsFeature(label_layer.fields())
+                feature.setAttribute("label", name)
+                feature.setGeometry(QgsGeometry.fromMultiPolygonXY([[part] for part in closed_parts]))
+                provider.addFeature(feature)
+
+        label_layer.updateExtents()
+        if label_layer.featureCount() == 0:
+            return None
+
+        symbol = label_layer.renderer().symbol() if label_layer.renderer() else None
+        if symbol is not None:
+            symbol.setOpacity(0)
+
+        # Reuse the established callout appearance, then let the polygon label
+        # engine place all perimeter names together outside every surrounding area.
+        template_layer = named_pages[0].line_layer
+        labeling = template_layer.labeling()
+        settings = labeling.settings() if labeling else QgsPalLayerSettings()
+        settings.fieldName = "label"
+        settings.isExpression = False
+        settings.geometryGeneratorEnabled = False
+        settings.geometryGenerator = ""
+        settings.geometryGeneratorType = QgsWkbTypes.PolygonGeometry
+        settings.placement = Qgis.LabelPlacement.OutsidePolygons
+        settings.dist = 6.0
+        settings.obstacle = True
+        settings.obstacleFactor = 2.0
+        settings.obstacleType = QgsPalLayerSettings.ObstacleType.PolygonWhole
+        text_format = settings.format()
+        text_format.setFont(QFont("Yu Gothic"))
+        settings.setFormat(text_format)
+        label_layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
+        label_layer.setLabelsEnabled(True)
+        self.apply_layer_color(label_layer, QColor("black"), include_labels=True)
+        return label_layer
+
     def settings_key(self, name):
         return f"zumen/{name}"
 
     def save_settings(self):
+        # QGIS側の入力保持は固定配置の項目だけを対象にする。
+        # 可変個数の周囲・排水ページは明示的に保存する .config だけに含める。
         settings = QgsSettings()
 
         for name in [
@@ -312,6 +741,8 @@ class Main(QDockWidget, FORM_CLASS):
         settings.setValue(self.settings_key("scale"), self.scale.scale())
         settings.setValue(self.settings_key("crs"), self.crs.crs().authid())
         settings.setValue(self.settings_key("fileName"), self.fileName.filePath())
+        settings.setValue(self.settings_key("saveConfig"), self.saveConfig.filePath())
+        settings.setValue(self.settings_key("isSaveConfig"), self.isSaveConfig.currentIndex())
         settings.setValue(self.settings_key("ketasu"), self.ketasu.value())
         settings.setValue(self.settings_key("isJochikeisan"), self.isJochikeisan.isChecked())
         settings.setValue(self.settings_key("isIchizu"), self.isIchizu.isChecked())
@@ -360,6 +791,20 @@ class Main(QDockWidget, FORM_CLASS):
         if file_path:
             self.fileName.setFilePath(str(file_path))
 
+        config_path = settings.value(self.settings_key("saveConfig"), "")
+        if config_path:
+            self.saveConfig.setFilePath(str(config_path))
+
+        save_config_mode = settings.value(self.settings_key("isSaveConfig"), 0)
+        try:
+            save_config_mode = int(save_config_mode)
+        except (TypeError, ValueError):
+            save_config_mode = 0
+        self.isSaveConfig.setCurrentIndex(
+            save_config_mode if save_config_mode in (0, 1, 2) else 0
+        )
+        self.update_save_config_enabled()
+
         ketasu_value = settings.value(self.settings_key("ketasu"), "")
         if ketasu_value not in ("", None):
             try:
@@ -391,6 +836,51 @@ class Main(QDockWidget, FORM_CLASS):
             if date.isValid():
                 widget.setDate(date)
                 return
+
+    def setup_shui_toolbox(self):
+        while self.shuiToolBox.count() > 0:
+            widget = self.shuiToolBox.widget(0)
+            self.shuiToolBox.removeItem(0)
+            if widget is not None:
+                widget.deleteLater()
+
+        self.shuis = []
+        self.shui_count = 0
+
+        try:
+            self.shui_add.clicked.disconnect(self.add_shui_page)
+        except TypeError:
+            pass
+        self.shui_add.clicked.connect(self.add_shui_page)
+        self.add_shui_page()
+
+    def add_shui_page(self):
+        self.shui_count += 1
+        page = ShuiPage(self.shui_count, self)
+        index = self.shuiToolBox.addItem(page, str(len(self.shuis) + 1))
+        self.shuiToolBox.setCurrentIndex(index)
+        page.delete_button.clicked.connect(lambda: self.remove_shui_page(page))
+        self.shuis.append(page)
+        self.renumber_shui_pages()
+
+    def remove_shui_page(self, page):
+        index = self.shuiToolBox.indexOf(page)
+        if index != -1:
+            self.shuiToolBox.removeItem(index)
+        if page in self.shuis:
+            self.shuis.remove(page)
+        page.deleteLater()
+        self.renumber_shui_pages()
+        if not self.shuis:
+            self.shui_count = 0
+
+    def renumber_shui_pages(self):
+        for i, page in enumerate(self.shuis, start=1):
+            page.index = i
+            page.setObjectName(f"shui_page_{i}")
+            toolbox_index = self.shuiToolBox.indexOf(page)
+            if toolbox_index != -1:
+                self.shuiToolBox.setItemText(toolbox_index, str(i))
 
     def setup_haisui_toolbox(self):
         while self.toolBox.count() > 0:
@@ -486,21 +976,33 @@ class Main(QDockWidget, FORM_CLASS):
         title.text = f"{self.htmlValues['rinshohan']} - 実測図"
 
         if self.isShui.isChecked():
-            self.update_zumen_options(root, "shui", "周囲")
-            self.update_xy_tables(root, self.xy_table_rows, "shui")
-            self.add_main_map(root, "shui")
+            for page in self.shuis:
+                values = page.values()
+                option_panel = f"shui_{page.index}"
+                name_text = self.clean_html_text(values.get("name")).strip()
+                dropdown_name = name_text or str(page.index)
+                self.update_zumen_options(root, option_panel, f"周囲 {dropdown_name}")
+                self.update_xy_tables(root, page.xy_table_rows, option_panel)
+                self.add_main_map(root, option_panel)
+                self.add_shui_detail(root, option_panel, page.length, page.area)
+                if name_text:
+                    self.add_map_name(root, option_panel, name_text, "shui")
         if self.isHaisui.isChecked():
             for page in self.haisuis:
                 values = page.values()
                 haisui_type = self.clean_html_text(self.haisuiType.text()).strip()
                 name_text = self.clean_html_text(values.get("name")).strip()
-                display_name = f"{haisui_type} {name_text}" if haisui_type else name_text
-                self.update_zumen_options(root, f"haisui_{page.index}", display_name)
+                named_display = f"{haisui_type} {name_text}".strip() if name_text else ""
+                dropdown_name = named_display or f"{haisui_type or '排水・林内路網'} {page.index}"
+                self.update_zumen_options(root, f"haisui_{page.index}", dropdown_name)
                 self.update_xy_tables(root, page.xy_table_rows, f"haisui_{page.index}")
                 self.add_main_map(root, f"haisui_{page.index}")
                 self.add_haisui_length(root, f"haisui_{page.index}", page.length)
                 self.add_haisui_detail(root, f"haisui_{page.index}", page.length, values.get("haba"))
-                self.add_haisui_name(root, f"haisui_{page.index}", display_name)
+                if named_display:
+                    self.add_map_name(
+                        root, f"haisui_{page.index}", named_display, "haisui"
+                    )
         if self.isShui.isChecked() or self.isHaisui.isChecked():
             self.update_zumen_options(root, "mix", "全体")
             self.update_xy_tables(root, self.xy_table_rows, "mix")
@@ -575,6 +1077,7 @@ class Main(QDockWidget, FORM_CLASS):
                     "haba": float(values.get("haba") or 0.0),
                     "is_jochi": bool(values.get("is_jochi")),
                 })
+        calc.set("data-has-drainage", "1" if items else "0")
 
         type_text = self.clean_html_text(self.haisuiType.text()).strip()
         area_value = self.htmlValues.get("area", 0)
@@ -584,34 +1087,52 @@ class Main(QDockWidget, FORM_CLASS):
         area_deduction = sum(self.haisui_calc_area(item) for item in jochi_items)
         area_diff = round(float(area_value or 0)) - round(area_deduction)
 
-        all_terms = [
-            f"{self.clean_html_text(item['name'])} {self.format_length(item['length'])}m"
-            for item in items
-        ]
-        jochi_terms = [
-            f"{self.clean_html_text(item['name'])} {self.format_length(item['length'])}m"
-            for item in jochi_items
-        ]
+        perimeter_area_terms = []
+        if self.isShui.isChecked():
+            for page in self.shuis:
+                name = self.clean_html_text(page.values().get("name")).strip()
+                area = self.format_area_int(page.area)
+                perimeter_area_terms.append(f"{name} {area}m²" if name else f"{area}m²")
+        if len(perimeter_area_terms) > 1:
+            perimeter_area_detail = (
+                f"{' + '.join(perimeter_area_terms)} = {self.format_area_int(area_value)}m²"
+            )
+        elif perimeter_area_terms:
+            perimeter_area_detail = perimeter_area_terms[0]
+        else:
+            perimeter_area_detail = f"{self.format_area_int(area_value)}m²"
+
+        all_terms = [self.haisui_length_term(item) for item in items]
+        jochi_terms = [self.haisui_length_term(item) for item in jochi_items]
         area_terms = [
             self.haisui_area_term(item)
             for item in jochi_items
         ]
         all_distance_detail = f"{' + '.join(all_terms)} = {self.format_length(all_distance)}m"
         jochi_distance_detail = f"{' + '.join(jochi_terms)} = {self.format_length(jochi_distance)}m"
-        area_deduction_detail = f"{' + '.join(area_terms)} = {self.format_area_int(area_deduction)}m2"
-        area_diff_detail = (
-            f"{self.format_area_int(area_value)}m2 - "
-            f"{self.format_area_int(area_deduction)}m2 = "
-            f"{self.format_area_int(area_diff)}m2 "
-            f"≒ {self.format_area_ha(area_diff)}ha"
-        )
+        area_deduction_detail = f"{' + '.join(area_terms)} = {self.format_area_int(area_deduction)}m²"
+        area_diff_area = f"{self.format_area_int(area_diff)}m²"
+        area_diff_ha = f"{self.format_area_ha(area_diff)}ha"
+        area_diff_result = f"{area_diff_area} ≒ {area_diff_ha}"
+        if round(area_deduction) == 0:
+            area_diff_left = ""
+            area_diff_detail = area_diff_result
+        else:
+            area_diff_left = (
+                f"{self.format_area_int(area_value)}m² - "
+                f"{self.format_area_int(area_deduction)}m²"
+            )
+            area_diff_detail = f"{area_diff_left} = {area_diff_result}"
 
         self.append_output_log(f"周囲外周長: {self.format_length(self.htmlValues.get('shui_length', 0))}m")
-        self.append_output_log(f"周囲面積: {self.format_area_int(area_value)}m2")
-        self.append_output_log(f"{type_text}延長: {all_distance_detail}")
-        self.append_output_log(f"除地延長: {jochi_distance_detail}")
-        self.append_output_log(f"除地面積: {area_deduction_detail}")
-        self.append_output_log(f"差引面積: {area_diff_detail}")
+        self.append_output_log(f"周囲面積: {perimeter_area_detail}")
+        if items:
+            self.append_output_log(f"{type_text}延長: {all_distance_detail}")
+            self.append_output_log(f"除地延長: {jochi_distance_detail}")
+            self.append_output_log(f"除地面積: {area_deduction_detail}")
+        else:
+            self.append_output_log("除地面積: 0m²")
+        self.append_output_log(f"施工面積: {area_diff_detail}")
 
         if write_to_html:
             self.set_calc_distance(
@@ -630,8 +1151,10 @@ class Main(QDockWidget, FORM_CLASS):
             self.set_calc_text(root, "box2", f"{self.format_length(all_distance)}m")
             self.set_calc_area(root, "box4", f"{' + '.join(area_terms)} = {self.format_area_int(area_deduction)}m")
             self.set_calc_area(root, "box5", f"≒ {self.format_area_int(area_deduction)}m")
-            self.set_calc_area_diff(root, "box7", area_value, area_deduction)
-            self.set_calc_area_with_ha(root, "box8", area_diff)
+            self.set_calc_text(root, "box7", perimeter_area_detail)
+            self.set_calc_difference(
+                root, "box10", area_diff_left, area_diff_area, area_diff_ha
+            )
 
     def format_length(self, value):
         return f"{float(value or 0):.1f}"
@@ -646,10 +1169,16 @@ class Main(QDockWidget, FORM_CLASS):
         area = float(item.get("length") or 0) * float(item.get("haba") or 0)
         return 0 if area < 100 else area
 
+    def haisui_length_term(self, item):
+        name = self.clean_html_text(item["name"]).strip()
+        length = f"{self.format_length(item['length'])}m"
+        return f"{name} {length}" if name else length
+
     def haisui_area_term(self, item):
         name = self.clean_html_text(item["name"])
         raw_area = float(item.get("length") or 0) * float(item.get("haba") or 0)
-        term = f"{name} {self.format_length(item['length'])}*{self.format_length(item['haba'])}"
+        calculation = f"{self.format_length(item['length'])}*{self.format_length(item['haba'])}"
+        term = f"{name} {calculation}" if name else calculation
         if 0 < raw_area < 100:
             return f"{term}(0m2)"
         return term
@@ -663,6 +1192,17 @@ class Main(QDockWidget, FORM_CLASS):
         elems = root.xpath(f"//*[@id='{elem_id}']")
         if elems:
             self.replace_children_with_text(elems[0], text)
+
+    def set_calc_difference(self, root, elem_id, left, result_area, result_ha):
+        elems = root.xpath(f"//*[@id='{elem_id}']")
+        if not elems:
+            return
+
+        elem = elems[0]
+        prefix = f"{left} = " if left else ""
+        self.replace_children_with_text(elem, f"{prefix}{result_area} ≒ ")
+        result_span = ET.SubElement(elem, "span", **{"class": "calc-result"})
+        result_span.text = result_ha
 
     def set_calc_distance(self, root, elem_id, label, detail):
         elems = root.xpath(f"//*[@id='{elem_id}']")
@@ -810,6 +1350,47 @@ class Main(QDockWidget, FORM_CLASS):
         )
         maps[0].append(img)
 
+    def add_shui_detail(self, root, option_panel, length, area):
+        details = root.xpath("//*[@id='xy_container']//*[@id='detail']")
+        map_details = root.xpath("//*[@id='map_detail']/dl")
+        if details:
+            detail = details[0]
+            self.add_shui_detail_item(
+                detail, f"detail_length_{option_panel}", option_panel,
+                "外周全長", self.format_length(length), "m"
+            )
+            self.add_shui_detail_item(
+                detail, f"detail_area_{option_panel}", option_panel,
+                "面積", self.format_area_int(area), "m²"
+            )
+        if map_details:
+            self.add_shui_detail_item(
+                map_details[0], f"map_area_{option_panel}", option_panel,
+                "面積\u00a0", self.format_area_int(area),
+                f"m² \u2243 {self.format_area_ha(area)}ha",
+                before_id="scale_",
+            )
+
+    def add_shui_detail_item(
+        self, parent, item_id, option_panel, label, value, suffix, before_id=None
+    ):
+        if parent.xpath(f"./div[@id='{item_id}']"):
+            return
+        div = ET.Element(
+            "div", id=item_id, **{"data-option-panel": option_panel}
+        )
+        dt = ET.SubElement(div, "dt", **{"class": "description"})
+        dt.text = label
+        dd = ET.SubElement(div, "dd", **{"class": "value"})
+        span = ET.SubElement(dd, "span")
+        span.text = "" if value is None else str(value)
+        span.tail = suffix
+        before = parent.xpath(f"./div[@id='{before_id}']") if before_id else []
+        if before:
+            parent.insert(parent.index(before[0]), div)
+        else:
+            parent.append(div)
+
     def add_haisui_length(self, root, option_panel, length):
         details = root.xpath("//*[@id='map_detail']/dl")
         if not details:
@@ -883,12 +1464,12 @@ class Main(QDockWidget, FORM_CLASS):
         else:
             detail.append(div)
 
-    def add_haisui_name(self, root, option_panel, name):
+    def add_map_name(self, root, option_panel, name, panel_type):
         locations = root.xpath("//*[@id='location']/div[contains(concat(' ', normalize-space(@class), ' '), ' value ')]")
         if not locations:
             return
 
-        item_id = f"haisui_name_{option_panel}"
+        item_id = f"{panel_type}_name_{option_panel}"
         if root.xpath(f"//*[@id='{item_id}']"):
             return
 
@@ -897,7 +1478,7 @@ class Main(QDockWidget, FORM_CLASS):
             id=item_id,
             **{
                 "class": "value3",
-                "data-option-panel": f"haisui {option_panel}",
+                "data-option-panel": f"{panel_type} {option_panel}",
             }
         )
         div.text = "" if name is None else str(name)
@@ -907,32 +1488,35 @@ class Main(QDockWidget, FORM_CLASS):
         if (
             self.isShui.isChecked()
         ):
-            layer = self.shui_point.currentLayer()
-            if layer is None:
+            if not self.shuis:
                 QMessageBox.warning(
                     self,
                     "エラー",
-                    "レイヤを選択してください"
+                    "少なくとも1つの周囲を追加してください"
                 )
                 return
 
-            if layer.type() != QgsMapLayerType.VectorLayer or QgsWkbTypes.geometryType(
-                layer.wkbType()
-            ) != QgsWkbTypes.PointGeometry:
-                QMessageBox.warning(
-                    self,
-                    "エラー",
-                    "ポイントレイヤのみ使用できます"
-                )
-                return
-            
-            if not self.shui_sokutenLabel.expression().strip():
-                QMessageBox.warning(
-                    self,
-                    "エラー",
-                    "測点名を選択してください"
-                )
-                return
+            names = set()
+            for page in self.shuis:
+                values = page.values()
+                name = values.get("name", "").strip()
+                layer = values.get("point_layer")
+                if name and name in names:
+                    QMessageBox.warning(self, "エラー", f"周囲名が重複しています: {name}")
+                    return
+                if name:
+                    names.add(name)
+                if layer is None:
+                    QMessageBox.warning(self, "エラー", f"周囲 {page.index}: レイヤを選択してください")
+                    return
+                if layer.type() != QgsMapLayerType.VectorLayer or QgsWkbTypes.geometryType(
+                    layer.wkbType()
+                ) != QgsWkbTypes.PointGeometry:
+                    QMessageBox.warning(self, "エラー", f"周囲 {page.index}: ポイントレイヤのみ使用できます")
+                    return
+                if not values.get("sokuten_label_exp", "").strip():
+                    QMessageBox.warning(self, "エラー", f"周囲 {page.index}: 測点名を選択してください")
+                    return
         if (
             self.isHaisui.isChecked()
         ):
@@ -947,14 +1531,6 @@ class Main(QDockWidget, FORM_CLASS):
             # 各排水・林内路網ページについて、ポイントレイヤと属性指定のバリデーションを行う
             for page in self.haisuis:
                 layer = page.point_layer.currentLayer()
-                if not page.name_edit.text().strip():
-                    QMessageBox.warning(
-                        self,
-                        "エラー",
-                        f"排水・林内路網 {page.index}: 名前を入力してください"
-                    )
-                    return
-
                 if layer is None:
                     QMessageBox.warning(
                         self,
@@ -1020,6 +1596,14 @@ class Main(QDockWidget, FORM_CLASS):
             )
             return
 
+        if self.isSaveConfig.currentIndex() == 2 and not self.saveConfig.filePath().strip():
+            QMessageBox.warning(
+                self,
+                "エラー",
+                "「ファイルを指定して生成」を選んだ場合は、設定保存ファイルを指定してください"
+            )
+            return
+
         p = Path(path)
 
         # フォルダ存在確認
@@ -1048,64 +1632,77 @@ class Main(QDockWidget, FORM_CLASS):
     
     def map_make(self, test=False):
         if self.isShui.isChecked():
-            make_layer = self.load_model("make_layer.model3")
-
-            params = {
-                'crs': self.crs.crs(),
-                'gpx': self.get_shui_values().get('point_layer'),
-                'gpx_extract': self.get_shui_values().get('filter_exp') or True,
-                'order': self.get_shui_values().get('sort_exp'),
-                'shui_pt': 'memory:',
-                'shui': 'memory:',
-                'area': 'memory:'
-            }
-
-            try:
-                result = processing.run(make_layer, params)
-                self.LayerSet['shui'] = {
-                    'pt': result['shui_pt'],
-                    'line': result['shui'],
+            total_length = 0.0
+            total_area = 0
+            self.xy_table_rows = []
+            for page in self.shuis:
+                values = page.values()
+                page.pt_layer = None
+                page.line_layer = None
+                page.area_layer = None
+                page.length = None
+                page.area = None
+                page.xy_table_rows = []
+                make_layer = self.load_model("make_layer.model3")
+                params = {
+                    'crs': self.crs.crs(),
+                    'gpx': values.get('point_layer'),
+                    'gpx_extract': values.get('filter_exp') or True,
+                    'order': values.get('sort_exp'),
+                    'shui_pt': 'memory:',
+                    'shui': 'memory:',
+                    'area': 'memory:'
                 }
-                point_count = self.LayerSet['shui']['pt'].featureCount()
-                if point_count < 3:
-                    raise ValueError(
-                        f"抽出後の周囲ポイントは{point_count}点です。"
-                        "周囲図の作成には3点以上必要です"
-                    )
-                shui_area_layer = result['area']
-                self.LayerSet['shui']['pt'].loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "point.qml"))
-                s = self.LayerSet['shui']['pt'].labeling().settings()
-                s.fieldName = self.get_shui_values().get('sokuten_label_exp')
-                s.isExpression = True
-                self.LayerSet['shui']['pt'].setLabeling(QgsVectorLayerSimpleLabeling(s))
-                self.LayerSet['shui']['line'].loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "line.qml"))
-                self.htmlValues['shui_length'] = round(sum(f.geometry().length() for f in self.LayerSet['shui']['line'].getFeatures()), 1)
-                self.htmlValues['area'] = int(sum(f.geometry().area() for f in shui_area_layer.getFeatures()))
-                self.htmlValues['area2'] = self.htmlValues['area']
-                self.htmlValues['area_ha'] = self.format_area_ha(self.htmlValues['area'])
-                self.xy_table_rows = self.point_layer_to_html_rows(
-                    self.LayerSet['shui']['pt'],
-                    name_expression=s.fieldName,
-                )
-            except Exception as e:
-                QMessageBox.warning(
-                    self,
-                    "エラー",
-                    f"周囲図の作成に失敗しました:\n{e}"
-                )
-                return False
 
-            if not test:
-                layout = self.create_layout(
-                    target_layers=[
-                        self.LayerSet['shui']['pt'],
-                        self.LayerSet['shui']['line'],
-                    ]
-                )
-                if layout is None:
+                try:
+                    result = processing.run(make_layer, params)
+                    page.pt_layer = result['shui_pt']
+                    page.line_layer = result['shui']
+                    page.area_layer = result['area']
+                    point_count = page.pt_layer.featureCount()
+                    if point_count < 3:
+                        raise ValueError(
+                            f"抽出後の周囲ポイントは{point_count}点です。"
+                            "周囲図の作成には3点以上必要です"
+                        )
+                    page.pt_layer.loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "point.qml"))
+                    s = page.pt_layer.labeling().settings()
+                    s.fieldName = values.get('sokuten_label_exp')
+                    s.isExpression = True
+                    page.pt_layer.setLabeling(QgsVectorLayerSimpleLabeling(s))
+                    page.line_layer.loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "line.qml"))
+                    page.length = round(sum(f.geometry().length() for f in page.line_layer.getFeatures()), 1)
+                    page.area = int(sum(f.geometry().area() for f in page.area_layer.getFeatures()))
+                    page.xy_table_rows = self.point_layer_to_html_rows(
+                        page.pt_layer,
+                        name_expression=s.fieldName,
+                    )
+                    self.xy_table_rows.extend(self.point_layer_to_html_rows(
+                        page.pt_layer,
+                        name_expression=s.fieldName,
+                    ))
+                    total_length += page.length
+                    total_area += page.area
+                except Exception as e:
+                    QMessageBox.warning(
+                        self,
+                        "エラー",
+                        f"周囲 {self.clean_html_text(values.get('name')).strip() or page.index} "
+                        f"の作成に失敗しました:\n{e}"
+                    )
                     return False
-                if not self.export_layout_image(layout, "shui"):
-                    return False
+
+                if not test:
+                    layout = self.create_layout(target_layers=[page.pt_layer, page.line_layer])
+                    if layout is None:
+                        return False
+                    if not self.export_layout_image(layout, f"shui_{page.index}"):
+                        return False
+
+            self.htmlValues['shui_length'] = round(total_length, 1)
+            self.htmlValues['area'] = int(total_area)
+            self.htmlValues['area2'] = self.htmlValues['area']
+            self.htmlValues['area_ha'] = self.format_area_ha(self.htmlValues['area'])
         
         if self.isHaisui.isChecked():
             for page in self.haisuis:
@@ -1166,29 +1763,29 @@ class Main(QDockWidget, FORM_CLASS):
         if not test and (self.isShui.isChecked() or self.isHaisui.isChecked()):
             target_layers = []
             if self.isShui.isChecked():
-                target_layers.extend([self.LayerSet['shui']['pt'], self.LayerSet['shui']['line']])
+                for page in self.shuis:
+                    if page.pt_layer is not None and page.line_layer is not None:
+                        self.configure_mix_line_label(page.line_layer, "", QColor("black"))
+                        target_layers.extend([page.pt_layer, page.line_layer])
+
+                perimeter_label_layer = self.create_mix_perimeter_label_layer(self.shuis)
+                if perimeter_label_layer is not None:
+                    target_layers.insert(0, perimeter_label_layer)
 
             if self.isHaisui.isChecked():
                 for page in self.haisuis:
                     if page.pt_layer is None or page.line_layer is None:
                         continue
                     page.pt_layer.loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "mix_haisui_point.qml"))
-                    page.line_layer.loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "mix_haisui_line.qml"))
-                    labeling = page.line_layer.labeling()
-                    s = labeling.settings() if labeling else QgsPalLayerSettings()
-                    label_text = self.clean_html_text(page.values().get("name")).replace("'", "''")
-                    s.fieldName = f"'{label_text}'"
-                    s.isExpression = True
-                    page.line_layer.setLabeling(QgsVectorLayerSimpleLabeling(s))
-                    page.line_layer.setLabelsEnabled(True)
+                    line_color = QColor("black") if not self.isShui.isChecked() else None
+                    self.configure_mix_line_label(
+                        page.line_layer,
+                        page.values().get("name"),
+                        line_color,
+                    )
                     if not self.isShui.isChecked():
                         self.apply_layer_color(
                             page.pt_layer,
-                            QColor("black"),
-                            include_labels=True,
-                        )
-                        self.apply_layer_color(
-                            page.line_layer,
                             QColor("black"),
                             include_labels=True,
                         )
@@ -1221,11 +1818,13 @@ class Main(QDockWidget, FORM_CLASS):
 
         style_dir = Path(__file__).parent / "styles"
         if self.isShui.isChecked():
-            self.LayerSet["shui"]["line"].loadNamedStyle(str(style_dir / "location_shui.qml"))
-            self.apply_layer_color(
-                self.LayerSet["shui"]["line"],
-                self.selected_color(self.shui_color),
-            )
+            for page in self.shuis:
+                if page.line_layer is not None:
+                    page.line_layer.loadNamedStyle(str(style_dir / "location_shui.qml"))
+                    self.apply_layer_color(
+                        page.line_layer,
+                        self.selected_color(self.shui_color),
+                    )
 
         if self.isHaisui.isChecked():
             for page in self.haisuis:
@@ -1291,7 +1890,9 @@ class Main(QDockWidget, FORM_CLASS):
     def location_line_layers(self):
         layers = []
         if self.isShui.isChecked():
-            layers.append(self.LayerSet["shui"]["line"])
+            for page in self.shuis:
+                if page.line_layer is not None:
+                    layers.append(page.line_layer)
 
         if self.isHaisui.isChecked():
             for page in self.haisuis:
@@ -1388,9 +1989,10 @@ class Main(QDockWidget, FORM_CLASS):
     def location_input_point_layers(self):
         layers = []
         if self.isShui.isChecked():
-            layer = self.get_shui_values().get("point_layer")
-            if layer is not None:
-                layers.append(layer)
+            for page in self.shuis:
+                layer = page.values().get("point_layer")
+                if layer is not None:
+                    layers.append(layer)
 
         if self.isHaisui.isChecked():
             for page in self.haisuis:
@@ -1425,18 +2027,22 @@ class Main(QDockWidget, FORM_CLASS):
 
         layers = []
         if self.isShui.isChecked():
-            layers.extend([
-                {
-                    "layer": self.LayerSet["shui"]["pt"],
-                    "name": "周囲_点",
-                    "style": "point.qml",
-                },
-                {
-                    "layer": self.LayerSet["shui"]["line"],
-                    "name": "周囲_ライン",
-                    "style": "line.qml",
-                },
-            ])
+            for page in self.shuis:
+                if page.pt_layer is None or page.line_layer is None:
+                    continue
+                name = self.safe_gpkg_layer_name(page.values().get("name") or page.index)
+                layers.extend([
+                    {
+                        "layer": page.pt_layer,
+                        "name": f"周囲_{page.index}_{name}_点",
+                        "style": "point.qml",
+                    },
+                    {
+                        "layer": page.line_layer,
+                        "name": f"周囲_{page.index}_{name}_ライン",
+                        "style": "line.qml",
+                    },
+                ])
 
         if self.isHaisui.isChecked():
             for page in self.haisuis:
@@ -1529,7 +2135,7 @@ class Main(QDockWidget, FORM_CLASS):
 
         return self.clean_html_text(value).strip()
 
-    def point_layer_to_html_rows(self, layer, name_prefix=None, name_expression=None):
+    def point_layer_to_html_rows(self, layer, name_expression=None):
         rows = []
         required_fields = ["x", "y"]
         if not self.clean_html_text(name_expression).strip():
@@ -1546,11 +2152,6 @@ class Main(QDockWidget, FORM_CLASS):
         for f in layer.getFeatures():
             try:
                 raw_name = self.feature_name_from_expression(layer, f, name_expression)
-                prefix = self.clean_html_text(name_prefix).strip()
-                if prefix and raw_name and not raw_name.startswith(prefix):
-                    raw_name = f"{prefix}{raw_name}"
-                elif prefix and not raw_name:
-                    raw_name = prefix
                 name = escape(raw_name)
                 x = float(f["x"])
                 y = float(f["y"])
@@ -1657,6 +2258,64 @@ class Main(QDockWidget, FORM_CLASS):
             return False
 
         return True
+
+class ShuiPage(QWidget):
+    def __init__(self, index, parent=None):
+        super().__init__(parent)
+        self.index = index
+        self.setObjectName(f"shui_page_{index}")
+
+        layout = QFormLayout(self)
+        self.length = None
+        self.area = None
+        self.xy_table_rows = []
+        self.pt_layer = None
+        self.line_layer = None
+        self.area_layer = None
+
+        self.name_edit = QLineEdit()
+        self.name_edit.setText(chr(64 + index) if index <= 26 else str(index))
+        layout.addRow("名前", self.name_edit)
+
+        point_group = QGroupBox("周囲ポイント指定")
+        point_layout = QGridLayout(point_group)
+        self.point_layer = QgsMapLayerComboBox()
+        self.point_layer.setFilters(QgsMapLayerProxyModel.PointLayer)
+        self.filter_exp = QgsFieldExpressionWidget()
+        self.filter_exp.setLayer(self.point_layer.currentLayer())
+        self.point_layer.layerChanged.connect(self.filter_exp.setLayer)
+        point_layout.addWidget(QLabel("ポイントレイヤ"), 0, 0)
+        point_layout.addWidget(self.point_layer, 0, 1)
+        point_layout.addWidget(QLabel("式（空欄ならレイヤ全体）"), 1, 0)
+        point_layout.addWidget(self.filter_exp, 1, 1)
+        layout.addRow(point_group)
+
+        attr_group = QGroupBox("使用する属性")
+        attr_layout = QGridLayout(attr_group)
+        self.sokuten_label_exp = QgsFieldExpressionWidget()
+        self.sort_exp = QgsFieldExpressionWidget()
+        self.sokuten_label_exp.setLayer(self.point_layer.currentLayer())
+        self.sort_exp.setLayer(self.point_layer.currentLayer())
+        self.point_layer.layerChanged.connect(self.sokuten_label_exp.setLayer)
+        self.point_layer.layerChanged.connect(self.sort_exp.setLayer)
+        attr_layout.addWidget(QLabel("測点名指定"), 0, 0)
+        attr_layout.addWidget(self.sokuten_label_exp, 0, 1)
+        attr_layout.addWidget(QLabel("結合順指定"), 1, 0)
+        attr_layout.addWidget(self.sort_exp, 1, 1)
+        layout.addRow(attr_group)
+
+        self.delete_button = QPushButton("削除")
+        layout.addRow(self.delete_button)
+
+    def values(self):
+        return {
+            "name": self.name_edit.text(),
+            "point_layer": self.point_layer.currentLayer(),
+            "filter_exp": self.filter_exp.expression(),
+            "sokuten_label_exp": self.sokuten_label_exp.expression(),
+            "sort_exp": self.sort_exp.expression(),
+        }
+
 
 class HaisuiPage(QWidget):
     def __init__(self, index, parent=None):

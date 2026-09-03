@@ -116,31 +116,49 @@ h1 {
 }
 #calc {
   border: .7mm solid black;
-  width: 130mm;
+  width: 145mm;
   margin: 0 auto;
-  height: 40mm;
+  height: 44mm;
   display: flex;
 }
 #calc > div {
   padding: 2mm;
+  min-width: 0;
 }
 #calc_distance {
-  width: 60%;
+  flex: 0 0 38%;
   border-right: .7mm solid black;
   display: grid;
   grid-template-rows: 1fr 1fr;
 }
 #calc_area {
-  width: 60%;
+  flex: 1 1 62%;
   display: grid;
-  grid-template-columns: 1fr 2fr;
+  grid-template-columns: auto 1fr;
   grid-template-rows: repeat(5, 1fr);
   grid-template-areas:
     "box1 box2"
     "box3 box4"
     ". box5"
     "box6 box7"
-    ". box8";
+    "box9 box10";
+  column-gap: 2mm;
+}
+#calc[data-has-drainage="0"] #calc_distance {
+  display: none;
+}
+#calc[data-has-drainage="0"] {
+  height: 24mm;
+}
+#calc[data-has-drainage="0"] #calc_area {
+  flex-basis: 100%;
+  grid-template-rows: 1fr 1fr;
+  grid-template-areas:
+    "box6 box7"
+    "box9 box10";
+}
+#calc[data-has-drainage="0"] :is(#box1, #box2, #box3, #box4, #box5) {
+  display: none;
 }
 #box1 {
   grid-area: box1;
@@ -163,11 +181,18 @@ h1 {
 #box7 {
   grid-area: box7;
 }
-#box8 {
-  grid-area: box8;
+#box9 {
+  grid-area: box9;
 }
-#box2, #box4, #box5, #box7, #box8 {
+#box10 {
+  grid-area: box10;
+}
+#box2, #box4, #box5, #box7, #box10 {
   text-align: right;
+  overflow-wrap: anywhere;
+}
+.calc-result {
+  color: #d00000;
 }
 #map {
   flex: 1;

@@ -23,7 +23,7 @@
    <item>
     <widget class="QTabWidget" name="tabWidget">
      <property name="currentIndex">
-      <number>0</number>
+      <number>4</number>
      </property>
      <widget class="QWidget" name="tab">
       <property name="sizePolicy">
@@ -245,10 +245,20 @@
             </property>
            </widget>
           </item>
-          <item row="12" column="0">
-           <widget class="QLabel" name="qgisLabel">
+          <item row="9" column="0">
+           <widget class="QLabel" name="label_16">
             <property name="text">
-             <string/>
+             <string>位置図周囲色</string>
+            </property>
+           </widget>
+          </item>
+          <item row="9" column="1">
+           <widget class="QgsColorButton" name="shui_color">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
             </property>
            </widget>
           </item>
@@ -269,20 +279,10 @@
             </property>
            </widget>
           </item>
-          <item row="9" column="0">
-           <widget class="QLabel" name="label_16">
+          <item row="12" column="0">
+           <widget class="QLabel" name="qgisLabel">
             <property name="text">
-             <string>位置図周囲色</string>
-            </property>
-           </widget>
-          </item>
-          <item row="9" column="1">
-           <widget class="QgsColorButton" name="shui_color">
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
+             <string/>
             </property>
            </widget>
           </item>
@@ -379,83 +379,18 @@
           </property>
           <layout class="QVBoxLayout" name="verticalLayout_10">
            <item>
-            <widget class="QGroupBox" name="groupBox">
-             <property name="title">
-              <string>周囲ポイント指定</string>
+            <widget class="QPushButton" name="shui_add">
+             <property name="text">
+              <string>周囲を追加</string>
              </property>
-             <layout class="QVBoxLayout" name="verticalLayout_4">
-              <item>
-               <layout class="QGridLayout" name="gridLayout_2">
-                <item row="1" column="0">
-                 <widget class="QLabel" name="label_8">
-                  <property name="text">
-                   <string>式（空欄ならレイヤ全体）</string>
-                  </property>
-                 </widget>
-                </item>
-                <item row="0" column="1">
-                 <widget class="QgsMapLayerComboBox" name="shui_point"/>
-                </item>
-                <item row="0" column="0">
-                 <widget class="QLabel" name="label_7">
-                  <property name="text">
-                   <string>ポイントレイヤ</string>
-                  </property>
-                 </widget>
-                </item>
-                <item row="1" column="1">
-                 <widget class="QgsFieldExpressionWidget" name="shui_ex"/>
-                </item>
-               </layout>
-              </item>
-             </layout>
             </widget>
            </item>
            <item>
-            <widget class="QGroupBox" name="groupBox_2">
-             <property name="title">
-              <string>使用する属性</string>
+            <widget class="QToolBox" name="shuiToolBox">
+             <property name="currentIndex">
+              <number>-1</number>
              </property>
-             <layout class="QVBoxLayout" name="verticalLayout_5">
-              <item>
-               <layout class="QGridLayout" name="gridLayout_3">
-                <item row="0" column="0">
-                 <widget class="QLabel" name="label_17">
-                  <property name="text">
-                   <string>測点名指定</string>
-                  </property>
-                 </widget>
-                </item>
-                <item row="1" column="0">
-                 <widget class="QLabel" name="label_10">
-                  <property name="text">
-                   <string>結合順指定</string>
-                  </property>
-                 </widget>
-                </item>
-                <item row="0" column="1">
-                 <widget class="QgsFieldExpressionWidget" name="shui_sokutenLabel"/>
-                </item>
-                <item row="1" column="1">
-                 <widget class="QgsFieldExpressionWidget" name="shui_sort"/>
-                </item>
-               </layout>
-              </item>
-             </layout>
             </widget>
-           </item>
-           <item>
-            <spacer name="verticalSpacer_3">
-             <property name="orientation">
-              <enum>Qt::Orientation::Vertical</enum>
-             </property>
-             <property name="sizeHint" stdset="0">
-              <size>
-               <width>20</width>
-               <height>122</height>
-              </size>
-             </property>
-            </spacer>
            </item>
           </layout>
          </widget>
@@ -662,6 +597,55 @@
            </property>
           </widget>
          </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="label_8">
+           <property name="text">
+            <string>設定を保存</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="0">
+          <widget class="QLabel" name="label_7">
+           <property name="text">
+            <string>設定保存ファイル</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="1">
+          <widget class="QgsFileWidget" name="saveConfig">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="dialogTitle">
+            <string/>
+           </property>
+           <property name="filter">
+            <string>設定ファイル (*.config)</string>
+           </property>
+           <property name="storageMode">
+            <enum>QgsFileWidget::StorageMode::SaveFile</enum>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QComboBox" name="isSaveConfig">
+           <item>
+            <property name="text">
+             <string>しない</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>出力フォルダに自動生成</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>ファイルを指定して生成</string>
+            </property>
+           </item>
+          </widget>
+         </item>
         </layout>
        </item>
        <item>
@@ -709,6 +693,13 @@
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout_2">
+     <item>
+      <widget class="QPushButton" name="readConfig">
+       <property name="text">
+        <string>設定読み込み</string>
+       </property>
+      </widget>
+     </item>
      <item>
       <widget class="QPushButton" name="testcalc_bt">
        <property name="text">
@@ -775,47 +766,17 @@
   <tabstop>ketasu</tabstop>
   <tabstop>crs</tabstop>
   <tabstop>isShui</tabstop>
-  <tabstop>shui_point</tabstop>
+  <tabstop>shui_add</tabstop>
   <tabstop>isHaisui</tabstop>
   <tabstop>scrollArea</tabstop>
   <tabstop>haisui_point_1</tabstop>
   <tabstop>haisui_add</tabstop>
+  <tabstop>saveConfig</tabstop>
+  <tabstop>readConfig</tabstop>
   <tabstop>submit_bt</tabstop>
  </tabstops>
  <resources/>
  <connections>
-  <connection>
-   <sender>shui_point</sender>
-   <signal>layerChanged(QgsMapLayer*)</signal>
-   <receiver>shui_sokutenLabel</receiver>
-   <slot>setLayer(QgsMapLayer*)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>257</x>
-     <y>123</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>432</x>
-     <y>227</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>shui_point</sender>
-   <signal>layerChanged(QgsMapLayer*)</signal>
-   <receiver>shui_sort</receiver>
-   <slot>setLayer(QgsMapLayer*)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>217</x>
-     <y>113</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>391</x>
-     <y>257</y>
-    </hint>
-   </hints>
-  </connection>
   <connection>
    <sender>haisui_point_1</sender>
    <signal>layerChanged(QgsMapLayer*)</signal>
@@ -823,12 +784,12 @@
    <slot>setLayer(QgsMapLayer*)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>138</x>
-     <y>192</y>
+     <x>285</x>
+     <y>355</y>
     </hint>
     <hint type="destinationlabel">
-     <x>138</x>
-     <y>290</y>
+     <x>215</x>
+     <y>453</y>
     </hint>
    </hints>
   </connection>
@@ -839,12 +800,12 @@
    <slot>setLayer(QgsMapLayer*)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>138</x>
-     <y>192</y>
+     <x>285</x>
+     <y>355</y>
     </hint>
     <hint type="destinationlabel">
-     <x>138</x>
-     <y>290</y>
+     <x>215</x>
+     <y>483</y>
     </hint>
    </hints>
   </connection>
@@ -860,7 +821,7 @@
     </hint>
     <hint type="destinationlabel">
      <x>101</x>
-     <y>54</y>
+     <y>71</y>
     </hint>
    </hints>
   </connection>
@@ -871,12 +832,12 @@
    <slot>setEnabled(bool)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>88</x>
-     <y>54</y>
+     <x>99</x>
+     <y>45</y>
     </hint>
     <hint type="destinationlabel">
-     <x>90</x>
-     <y>80</y>
+     <x>101</x>
+     <y>71</y>
     </hint>
    </hints>
   </connection>
@@ -891,24 +852,8 @@
      <y>717</y>
     </hint>
     <hint type="destinationlabel">
-     <x>119</x>
-     <y>78</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>shui_point</sender>
-   <signal>layerChanged(QgsMapLayer*)</signal>
-   <receiver>shui_ex</receiver>
-   <slot>setLayer(QgsMapLayer*)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>370</x>
-     <y>109</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>374</x>
-     <y>139</y>
+     <x>140</x>
+     <y>190</y>
     </hint>
    </hints>
   </connection>
