@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>sample</title>
+  <link rel="stylesheet" href="asset/katex/katex.min.css">
   <link rel="stylesheet" href="asset/index.css">
 </head>
 <body>
@@ -70,7 +71,7 @@
             <dt class="description">幅</dt>
             <dd class="value"><span></span>m</dd>
           </div> -->
-          <div>
+          <div id="crs_detail">
             <dt class="description">測地系&nbsp;</dt>
             <dd class="value" id="crs"></dd>
           </div>
@@ -86,7 +87,7 @@
             <div id="area2_" data-option-panel="mix">
               <dt class="description">面積&nbsp;</dt>
               <dd class="value"><span id="area2"></span>m<sup>2</sup></dd>
-              <dd class="value" data-option-panel="mix">&nbsp;≒&nbsp;<span id="area_ha"></span>ha</dd>
+              <dd class="value" data-option-panel="mix">&nbsp;≃&nbsp;<span id="area_ha"></span>ha</dd>
             </div>
             <!-- <div>
               <dt class="description">延長&nbsp;</dt>
@@ -129,8 +130,20 @@
       </div>
     </div>
   </div>
+  <script src="asset/katex/katex.min.js"></script>
   <script>
     (() => {
+      document.querySelectorAll("[data-latex]").forEach((element) => {
+        if (!window.katex) {
+          return;
+        }
+        window.katex.render(element.dataset.latex, element, {
+          throwOnError: false,
+          strict: "ignore",
+          output: "htmlAndMathml",
+        });
+      });
+
       const select = document.getElementById("zumen_type");
       const panels = document.querySelectorAll("[data-option-panel]");
       const xyUpdown = document.getElementById("xy_updown");

@@ -329,6 +329,7 @@ class Main(QDockWidget, FORM_CLASS):
                 "scale": self.scale.scale(),
                 "crs": self.crs.crs().authid(),
                 "show_deduction": self.isJochikeisan.isChecked(),
+                "minimum_exclusion_area_a": self.minEx.value(),
                 "drainage_type": self.haisuiType.text(),
                 "create_location_map": self.isIchizu.isChecked(),
                 "perimeter_color": self.color_to_config(self.selected_color(self.shui_color)),
@@ -498,6 +499,9 @@ class Main(QDockWidget, FORM_CLASS):
                 self.crs.setCrs(crs)
 
         self.isJochikeisan.setChecked(bool(map_settings.get("show_deduction", False)))
+        minimum_exclusion_area = map_settings.get("minimum_exclusion_area_a")
+        if minimum_exclusion_area not in (None, ""):
+            self.minEx.setValue(float(minimum_exclusion_area))
         self.isIchizu.setChecked(bool(map_settings.get("create_location_map", False)))
         self.set_color_from_config(self.shui_color, map_settings.get("perimeter_color", ""))
         self.set_color_from_config(self.haisui_color, map_settings.get("drainage_color", ""))
@@ -744,6 +748,7 @@ class Main(QDockWidget, FORM_CLASS):
         settings.setValue(self.settings_key("saveConfig"), self.saveConfig.filePath())
         settings.setValue(self.settings_key("isSaveConfig"), self.isSaveConfig.currentIndex())
         settings.setValue(self.settings_key("ketasu"), self.ketasu.value())
+        settings.setValue(self.settings_key("minEx"), self.minEx.value())
         settings.setValue(self.settings_key("isJochikeisan"), self.isJochikeisan.isChecked())
         settings.setValue(self.settings_key("isIchizu"), self.isIchizu.isChecked())
         settings.setValue(self.settings_key("isShui"), self.isShui.isChecked())
@@ -809,6 +814,13 @@ class Main(QDockWidget, FORM_CLASS):
         if ketasu_value not in ("", None):
             try:
                 self.ketasu.setValue(int(ketasu_value))
+            except (TypeError, ValueError):
+                pass
+
+        min_ex_value = settings.value(self.settings_key("minEx"), "")
+        if min_ex_value not in ("", None):
+            try:
+                self.minEx.setValue(float(min_ex_value))
             except (TypeError, ValueError):
                 pass
 
@@ -961,7 +973,7 @@ class Main(QDockWidget, FORM_CLASS):
             "scale": f"1/{int(self.scale.scale())}",
             "sanrinshoyusha": self.sanrinshoyusha.text(),
             "rinshohan": self.rinshohan.text(),
-            "crs": self.crs.crs().authid(),
+            "crs": self.format_crs_display(self.crs.crs()),
             "seizubi": self.seizubi.text(),
             "seizusha": self.seizusha.text() or self.sokuryosha.text(),
             "seizujigyosha": self.seizujigyosha.text() or self.sokuryojigyosha.text(),
@@ -1082,17 +1094,26 @@ class Main(QDockWidget, FORM_CLASS):
         type_text = self.clean_html_text(self.haisuiType.text()).strip()
         area_value = self.htmlValues.get("area", 0)
         all_distance = sum(item["length"] for item in items)
-        jochi_items = [item for item in items if item["is_jochi"]]
+        requested_jochi_items = [item for item in items if item["is_jochi"]]
+        minimum_exclusion_area = self.minimum_exclusion_area_m2()
+        jochi_items = [
+            item for item in requested_jochi_items
+            if self.haisui_raw_area(item) >= minimum_exclusion_area
+        ]
         jochi_distance = sum(item["length"] for item in jochi_items)
         area_deduction = sum(self.haisui_calc_area(item) for item in jochi_items)
         area_diff = round(float(area_value or 0)) - round(area_deduction)
 
         perimeter_area_terms = []
+        perimeter_area_math_terms = []
         if self.isShui.isChecked():
             for page in self.shuis:
                 name = self.clean_html_text(page.values().get("name")).strip()
                 area = self.format_area_int(page.area)
                 perimeter_area_terms.append(f"{name} {area}m²" if name else f"{area}m²")
+                perimeter_area_math_terms.append(
+                    self.latex_named_quantity(name, area, r"\mathrm{m}^{2}")
+                )
         if len(perimeter_area_terms) > 1:
             perimeter_area_detail = (
                 f"{' + '.join(perimeter_area_terms)} = {self.format_area_int(area_value)}m²"
@@ -1108,12 +1129,23 @@ class Main(QDockWidget, FORM_CLASS):
             self.haisui_area_term(item)
             for item in jochi_items
         ]
+        has_below_minimum_area = minimum_exclusion_area > 0 and any(
+            self.haisui_raw_area(item) < minimum_exclusion_area
+            for item in requested_jochi_items
+        )
+        minimum_exclusion_area_text = self.format_area_int(minimum_exclusion_area)
         all_distance_detail = f"{' + '.join(all_terms)} = {self.format_length(all_distance)}m"
-        jochi_distance_detail = f"{' + '.join(jochi_terms)} = {self.format_length(jochi_distance)}m"
-        area_deduction_detail = f"{' + '.join(area_terms)} = {self.format_area_int(area_deduction)}m²"
+        jochi_distance_detail = (
+            f"{' + '.join(jochi_terms)} = {self.format_length(jochi_distance)}m"
+            if jochi_terms else f"{self.format_length(jochi_distance)}m"
+        )
+        area_deduction_detail = (
+            f"{' + '.join(area_terms)} = {self.format_area_int(area_deduction)}m²"
+            if area_terms else f"{self.format_area_int(area_deduction)}m²"
+        )
         area_diff_area = f"{self.format_area_int(area_diff)}m²"
         area_diff_ha = f"{self.format_area_ha(area_diff)}ha"
-        area_diff_result = f"{area_diff_area} ≒ {area_diff_ha}"
+        area_diff_result = f"{area_diff_area} ≃ {area_diff_ha}"
         if round(area_deduction) == 0:
             area_diff_left = ""
             area_diff_detail = area_diff_result
@@ -1124,12 +1156,56 @@ class Main(QDockWidget, FORM_CLASS):
             )
             area_diff_detail = f"{area_diff_left} = {area_diff_result}"
 
+        all_distance_math = self.latex_sum_parts(
+            [self.latex_length_term(item) for item in items],
+            self.latex_quantity(all_distance, r"\mathrm{m}", self.format_length),
+        )
+        jochi_distance_math = self.latex_sum_parts(
+            [self.latex_length_term(item) for item in jochi_items],
+            self.latex_quantity(jochi_distance, r"\mathrm{m}", self.format_length),
+        )
+        area_deduction_math = self.latex_sum_parts(
+            [self.latex_area_term(item) for item in jochi_items],
+            self.latex_quantity(area_deduction, r"\mathrm{m}^{2}", self.format_area_int),
+        )
+        if len(perimeter_area_math_terms) > 1:
+            perimeter_area_math = self.latex_sum_parts(
+                perimeter_area_math_terms,
+                self.latex_quantity(area_value, r"\mathrm{m}^{2}", self.format_area_int),
+            )
+        elif perimeter_area_math_terms:
+            perimeter_area_math = perimeter_area_math_terms
+        else:
+            perimeter_area_math = [
+                self.latex_quantity(area_value, r"\mathrm{m}^{2}", self.format_area_int)
+            ]
+        area_diff_math = []
+        if round(area_deduction) != 0:
+            area_diff_math.extend([
+                self.latex_quantity(area_value, r"\mathrm{m}^{2}", self.format_area_int),
+                ("−", "-"),
+                self.latex_quantity(area_deduction, r"\mathrm{m}^{2}", self.format_area_int),
+                ("=", "="),
+            ])
+        area_diff_math.extend([
+            self.latex_quantity(area_diff, r"\mathrm{m}^{2}", self.format_area_int),
+            ("≃", r"\simeq"),
+            (
+                area_diff_ha,
+                rf"\color{{#d00000}}{{{self.format_area_ha(area_diff)}\,\mathrm{{ha}}}}",
+            ),
+        ])
+
         self.append_output_log(f"周囲外周長: {self.format_length(self.htmlValues.get('shui_length', 0))}m")
         self.append_output_log(f"周囲面積: {perimeter_area_detail}")
         if items:
             self.append_output_log(f"{type_text}延長: {all_distance_detail}")
             self.append_output_log(f"除地延長: {jochi_distance_detail}")
-            self.append_output_log(f"除地面積: {area_deduction_detail}")
+            exclusion_label = (
+                f"除地面積（{minimum_exclusion_area_text}m²未満は0m²）"
+                if has_below_minimum_area else "除地面積"
+            )
+            self.append_output_log(f"{exclusion_label}: {area_deduction_detail}")
         else:
             self.append_output_log("除地面積: 0m²")
         self.append_output_log(f"施工面積: {area_diff_detail}")
@@ -1140,21 +1216,32 @@ class Main(QDockWidget, FORM_CLASS):
                 "calc_distance_haisuikou",
                 f"{type_text}：",
                 all_distance_detail,
+                all_distance_math,
             )
             self.set_calc_distance(
                 root,
                 "calc_distance_jochi",
                 "除地：",
                 jochi_distance_detail,
+                jochi_distance_math,
             )
             self.set_calc_text(root, "box1", f"{type_text}：")
-            self.set_calc_text(root, "box2", f"{self.format_length(all_distance)}m")
-            self.set_calc_area(root, "box4", f"{' + '.join(area_terms)} = {self.format_area_int(area_deduction)}m")
-            self.set_calc_area(root, "box5", f"≒ {self.format_area_int(area_deduction)}m")
-            self.set_calc_text(root, "box7", perimeter_area_detail)
-            self.set_calc_difference(
-                root, "box10", area_diff_left, area_diff_area, area_diff_ha
+            self.set_latex_parts(
+                root, "box2",
+                [self.latex_quantity(all_distance, r"\mathrm{m}", self.format_length)],
             )
+            self.set_calc_exclusion_label(
+                root,
+                has_below_minimum_area,
+                minimum_exclusion_area_text,
+            )
+            self.set_latex_parts(root, "box4", area_deduction_math)
+            self.set_latex_parts(root, "box5", [
+                ("≃", r"\simeq"),
+                self.latex_quantity(area_deduction, r"\mathrm{m}^{2}", self.format_area_int),
+            ])
+            self.set_latex_parts(root, "box7", perimeter_area_math)
+            self.set_latex_parts(root, "box10", area_diff_math)
 
     def format_length(self, value):
         return f"{float(value or 0):.1f}"
@@ -1165,9 +1252,75 @@ class Main(QDockWidget, FORM_CLASS):
     def format_area_ha(self, value):
         return f"{math.trunc((float(value or 0) / 10000) * 100) / 100:.2f}"
 
+    def format_crs_display(self, crs):
+        authid = self.clean_html_text(crs.authid()).strip()
+        description = self.clean_html_text(crs.description()).strip()
+        if authid and description and authid.casefold() != description.casefold():
+            return f"{authid} {description}"
+        return authid or description
+
+    def latex_escape_text(self, value):
+        text = self.clean_html_text(value)
+        replacements = {
+            "\\": r"\textbackslash{}",
+            "{": r"\{", "}": r"\}", "_": r"\_", "%": r"\%",
+            "$": r"\$", "#": r"\#", "&": r"\&", "^": r"\^{}",
+            "~": r"\~{}",
+        }
+        return "".join(replacements.get(char, char) for char in text)
+
+    def latex_text(self, value):
+        return rf"\text{{{self.latex_escape_text(value)}}}"
+
+    def latex_quantity(self, value, latex_unit, formatter):
+        formatted = formatter(value)
+        plain_unit = "m²" if "^{2}" in latex_unit else "m"
+        return f"{formatted}{plain_unit}", rf"{formatted}\,{latex_unit}"
+
+    def latex_named_quantity(self, name, value, latex_unit):
+        plain, latex = self.latex_quantity(value, latex_unit, self.format_area_int)
+        if not name:
+            return plain, latex
+        return f"{name} {plain}", rf"{self.latex_text(name)}\;{latex}"
+
+    def latex_length_term(self, item):
+        name = self.clean_html_text(item["name"]).strip()
+        quantity = self.latex_quantity(item["length"], r"\mathrm{m}", self.format_length)
+        if not name:
+            return quantity
+        return f"{name} {quantity[0]}", rf"{self.latex_text(name)}\;{quantity[1]}"
+
+    def latex_area_term(self, item):
+        name = self.clean_html_text(item["name"]).strip()
+        length = self.format_length(item["length"])
+        width = self.format_length(item["haba"])
+        plain = f"{length}m×{width}m"
+        latex = rf"{length}\,\mathrm{{m}}\times{width}\,\mathrm{{m}}"
+        if not name:
+            return plain, latex
+        return f"{name} {plain}", rf"{self.latex_text(name)}\;{latex}"
+
+    def latex_sum_parts(self, terms, total):
+        if not terms:
+            return [total]
+        parts = []
+        for index, term in enumerate(terms):
+            if index:
+                parts.append(("+", "+"))
+            parts.append(term)
+        parts.extend([("=", "="), total])
+        return parts
+
     def haisui_calc_area(self, item):
-        area = float(item.get("length") or 0) * float(item.get("haba") or 0)
-        return 0 if area < 100 else area
+        area = self.haisui_raw_area(item)
+        return 0 if area < self.minimum_exclusion_area_m2() else area
+
+    def minimum_exclusion_area_m2(self):
+        # UIの最小除地面積はa（アール）、計算中の面積はm²。
+        return max(0.0, float(self.minEx.value()) * 100.0)
+
+    def haisui_raw_area(self, item):
+        return float(item.get("length") or 0) * float(item.get("haba") or 0)
 
     def haisui_length_term(self, item):
         name = self.clean_html_text(item["name"]).strip()
@@ -1176,12 +1329,8 @@ class Main(QDockWidget, FORM_CLASS):
 
     def haisui_area_term(self, item):
         name = self.clean_html_text(item["name"])
-        raw_area = float(item.get("length") or 0) * float(item.get("haba") or 0)
-        calculation = f"{self.format_length(item['length'])}*{self.format_length(item['haba'])}"
-        term = f"{name} {calculation}" if name else calculation
-        if 0 < raw_area < 100:
-            return f"{term}(0m2)"
-        return term
+        calculation = f"{self.format_length(item['length'])}×{self.format_length(item['haba'])}"
+        return f"{name} {calculation}" if name else calculation
 
     def replace_children_with_text(self, elem, text):
         elem.text = text
@@ -1193,6 +1342,24 @@ class Main(QDockWidget, FORM_CLASS):
         if elems:
             self.replace_children_with_text(elems[0], text)
 
+    def apply_latex_parts(self, elem, parts):
+        self.replace_children_with_text(elem, "")
+        classes = set((elem.get("class") or "").split())
+        classes.add("latex-flow")
+        elem.set("class", " ".join(sorted(classes)))
+        for plain, latex in parts:
+            span = ET.SubElement(
+                elem,
+                "span",
+                **{"class": "latex-part", "data-latex": latex},
+            )
+            span.text = plain
+
+    def set_latex_parts(self, root, elem_id, parts):
+        elems = root.xpath(f"//*[@id='{elem_id}']")
+        if elems:
+            self.apply_latex_parts(elems[0], parts)
+
     def set_calc_difference(self, root, elem_id, left, result_area, result_ha):
         elems = root.xpath(f"//*[@id='{elem_id}']")
         if not elems:
@@ -1200,11 +1367,27 @@ class Main(QDockWidget, FORM_CLASS):
 
         elem = elems[0]
         prefix = f"{left} = " if left else ""
-        self.replace_children_with_text(elem, f"{prefix}{result_area} ≒ ")
+        self.replace_children_with_text(elem, f"{prefix}{result_area} ≃ ")
         result_span = ET.SubElement(elem, "span", **{"class": "calc-result"})
         result_span.text = result_ha
 
-    def set_calc_distance(self, root, elem_id, label, detail):
+    def set_calc_exclusion_label(
+        self,
+        root,
+        has_below_minimum_area,
+        minimum_exclusion_area_text,
+    ):
+        elems = root.xpath("//*[@id='box3']")
+        if not elems:
+            return
+
+        elem = elems[0]
+        self.replace_children_with_text(elem, "除地：")
+        if has_below_minimum_area:
+            note = ET.SubElement(elem, "span", **{"class": "calc-note"})
+            note.text = f"{minimum_exclusion_area_text}m²未満は0m²"
+
+    def set_calc_distance(self, root, elem_id, label, detail, math_parts):
         elems = root.xpath(f"//*[@id='{elem_id}']")
         if not elems:
             return
@@ -1213,6 +1396,7 @@ class Main(QDockWidget, FORM_CLASS):
         self.replace_children_with_text(elem, label)
         p = ET.SubElement(elem, "p")
         p.text = detail
+        self.apply_latex_parts(p, math_parts)
 
     def set_calc_area(self, root, elem_id, text_before_sup):
         elems = root.xpath(f"//*[@id='{elem_id}']")
@@ -1246,7 +1430,7 @@ class Main(QDockWidget, FORM_CLASS):
         self.replace_children_with_text(elem, f"= {self.format_area_int(area_value)}m")
         sup = ET.SubElement(elem, "sup")
         sup.text = "2"
-        sup.tail = f" ≒ {self.format_area_ha(area_value)}ha"
+        sup.tail = f" ≃ {self.format_area_ha(area_value)}ha"
 
     def clean_html_tree(self, root):
         for elem in root.iter():
@@ -1267,9 +1451,11 @@ class Main(QDockWidget, FORM_CLASS):
         for table in xy_container.xpath(f".//table[@data-xy-table and @data-option-panel='{option_panel}']"):
             table.getparent().remove(table)
 
+        # 測地系名が2行になっても下枠に収まるよう、1ページ24点にする。
+        rows_per_table = 24
         chunks = [
-            xy_table_rows[i:i + 25]
-            for i in range(0, len(xy_table_rows), 25)
+            xy_table_rows[i:i + rows_per_table]
+            for i in range(0, len(xy_table_rows), rows_per_table)
         ]
 
         for index, rows in enumerate(chunks, start=1):
@@ -1357,11 +1543,13 @@ class Main(QDockWidget, FORM_CLASS):
             detail = details[0]
             self.add_shui_detail_item(
                 detail, f"detail_length_{option_panel}", option_panel,
-                "外周全長", self.format_length(length), "m"
+                "外周全長", self.format_length(length), "m",
+                before_id="crs",
             )
             self.add_shui_detail_item(
                 detail, f"detail_area_{option_panel}", option_panel,
-                "面積", self.format_area_int(area), "m²"
+                "面積", self.format_area_int(area), "m²",
+                before_id="crs",
             )
         if map_details:
             self.add_shui_detail_item(
@@ -1385,7 +1573,10 @@ class Main(QDockWidget, FORM_CLASS):
         span = ET.SubElement(dd, "span")
         span.text = "" if value is None else str(value)
         span.tail = suffix
-        before = parent.xpath(f"./div[@id='{before_id}']") if before_id else []
+        before = (
+            parent.xpath(f"./div[@id='{before_id}' or .//*[@id='{before_id}']]")
+            if before_id else []
+        )
         if before:
             parent.insert(parent.index(before[0]), div)
         else:
@@ -1761,16 +1952,16 @@ class Main(QDockWidget, FORM_CLASS):
                         return False
 
         if not test and (self.isShui.isChecked() or self.isHaisui.isChecked()):
-            target_layers = []
+            perimeter_layers = []
+            drainage_layers = []
+            perimeter_label_layer = None
             if self.isShui.isChecked():
                 for page in self.shuis:
                     if page.pt_layer is not None and page.line_layer is not None:
                         self.configure_mix_line_label(page.line_layer, "", QColor("black"))
-                        target_layers.extend([page.pt_layer, page.line_layer])
+                        perimeter_layers.extend([page.pt_layer, page.line_layer])
 
                 perimeter_label_layer = self.create_mix_perimeter_label_layer(self.shuis)
-                if perimeter_label_layer is not None:
-                    target_layers.insert(0, perimeter_label_layer)
 
             if self.isHaisui.isChecked():
                 for page in self.haisuis:
@@ -1789,7 +1980,15 @@ class Main(QDockWidget, FORM_CLASS):
                             QColor("black"),
                             include_labels=True,
                         )
-                    target_layers.extend([page.pt_layer, page.line_layer])
+                    drainage_layers.extend([page.pt_layer, page.line_layer])
+
+            # QgsLayoutItemMapは先頭のレイヤーほど手前に描画する。
+            # 周囲名は最前面に残し、排水の点・線を周囲の点・線より手前にする。
+            target_layers = (
+                ([perimeter_label_layer] if perimeter_label_layer is not None else [])
+                + drainage_layers
+                + perimeter_layers
+            )
 
             layout = self.create_layout(target_layers=target_layers)
             if layout is None:
@@ -1889,13 +2088,15 @@ class Main(QDockWidget, FORM_CLASS):
 
     def location_line_layers(self):
         layers = []
-        if self.isShui.isChecked():
-            for page in self.shuis:
+        # QgsLayoutItemMapは先頭のレイヤーほど手前に描画するため、
+        # 位置図でも排水を周囲より先に並べる。
+        if self.isHaisui.isChecked():
+            for page in self.haisuis:
                 if page.line_layer is not None:
                     layers.append(page.line_layer)
 
-        if self.isHaisui.isChecked():
-            for page in self.haisuis:
+        if self.isShui.isChecked():
+            for page in self.shuis:
                 if page.line_layer is not None:
                     layers.append(page.line_layer)
 

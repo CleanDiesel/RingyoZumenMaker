@@ -23,7 +23,7 @@
    <item>
     <widget class="QTabWidget" name="tabWidget">
      <property name="currentIndex">
-      <number>4</number>
+      <number>0</number>
      </property>
      <widget class="QWidget" name="tab">
       <property name="sizePolicy">
@@ -279,10 +279,30 @@
             </property>
            </widget>
           </item>
+          <item row="11" column="0">
+           <widget class="QLabel" name="label_10">
+            <property name="text">
+             <string>最小除地面積</string>
+            </property>
+           </widget>
+          </item>
           <item row="12" column="0">
            <widget class="QLabel" name="qgisLabel">
             <property name="text">
              <string/>
+            </property>
+           </widget>
+          </item>
+          <item row="11" column="1">
+           <widget class="QDoubleSpinBox" name="minEx">
+            <property name="suffix">
+             <string>a</string>
+            </property>
+            <property name="maximum">
+             <double>100000.000000000000000</double>
+            </property>
+            <property name="value">
+             <double>1.000000000000000</double>
             </property>
            </widget>
           </item>

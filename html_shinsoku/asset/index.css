@@ -89,6 +89,17 @@ h1 {
     flex-direction: row;
     justify-content: space-between;
 }
+#detail > #crs_detail {
+    width: 100%;
+}
+#crs_detail #crs {
+    min-width: 0;
+    padding-left: 2mm;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: right;
+    font-size: 2.6mm;
+}
 #xy_table,
 .xy_table {
     margin-top: 2mm;
@@ -193,6 +204,24 @@ h1 {
 }
 .calc-result {
   color: #d00000;
+}
+.calc-note {
+  display: block;
+  white-space: nowrap;
+  font-size: 2.5mm;
+}
+.latex-flow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: .15em .4em;
+}
+#calc_distance .latex-flow {
+  justify-content: flex-start;
+}
+#calc .katex {
+  font-size: 1em;
 }
 #map {
   flex: 1;
