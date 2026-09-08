@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>673</width>
-    <height>728</height>
+    <height>784</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -198,6 +198,12 @@
             <property name="showCurrentScaleButton">
              <bool>true</bool>
             </property>
+            <property name="scale">
+             <bool>true</bool>
+            </property>
+            <property name="minScale">
+             <bool>false</bool>
+            </property>
            </widget>
           </item>
           <item row="3" column="0">
@@ -227,7 +233,7 @@
              <bool>true</bool>
             </property>
             <property name="text">
-             <string>排水</string>
+             <string>排水溝</string>
             </property>
            </widget>
           </item>
@@ -393,8 +399,8 @@
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>629</width>
-            <height>573</height>
+            <width>99</width>
+            <height>50</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout_10">
@@ -443,8 +449,8 @@
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>629</width>
-            <height>573</height>
+            <width>99</width>
+            <height>134</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout_12">
@@ -465,8 +471,8 @@
                <rect>
                 <x>0</x>
                 <y>0</y>
-                <width>611</width>
-                <height>495</height>
+                <width>300</width>
+                <height>328</height>
                </rect>
               </property>
               <attribute name="label">

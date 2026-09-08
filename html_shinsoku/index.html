@@ -81,13 +81,16 @@
           <button type="button" id="xy_next">▼</button>
         </div>
       </div>
-      <div id="map_container">
+      <div id="map_container" data-map-visible="1">
+        <label id="map_visibility_control" class="print_hide" title="地図欄の表示を切り替える">
+          <input type="checkbox" id="map_visibility_toggle" checked>
+          <span>地図を表示</span>
+        </label>
         <div id="map_detail">
           <dl>
             <div id="area2_" data-option-panel="mix">
               <dt class="description">面積&nbsp;</dt>
               <dd class="value"><span id="area2"></span>m<sup>2</sup></dd>
-              <dd class="value" data-option-panel="mix">&nbsp;≃&nbsp;<span id="area_ha"></span>ha</dd>
             </div>
             <!-- <div>
               <dt class="description">延長&nbsp;</dt>
@@ -121,9 +124,9 @@
             <div id="box3">除地：</div>
             <div id="box4"></div>
             <div id="box5"></div>
-            <div id="box6">周囲面積：</div>
+            <div id="box6">施行地面積：</div>
             <div id="box7"></div>
-            <div id="box9">施工面積：</div>
+            <div id="box9">面積：</div>
             <div id="box10"></div>
           </div>
         </div>
@@ -150,6 +153,8 @@
       const xyPrev = document.getElementById("xy_prev");
       const xyNext = document.getElementById("xy_next");
       const xyTables = Array.from(document.querySelectorAll("[data-xy-table]"));
+      const mapContainer = document.getElementById("map_container");
+      const mapVisibilityToggle = document.getElementById("map_visibility_toggle");
       const calc = document.getElementById("calc");
       const baseTitle = document.title;
       let currentXyIndex = 0;
@@ -161,6 +166,21 @@
       const panelValues = (panel) => (
         panel.dataset.optionPanel || ""
       ).split(/\s+/).filter(Boolean);
+
+      const updateMapVisibility = () => {
+        if (!mapContainer || !mapVisibilityToggle) {
+          return;
+        }
+        mapContainer.dataset.mapVisible = mapVisibilityToggle.checked ? "1" : "0";
+      };
+
+      const syncMapVisibilityWithXyTable = (hasActiveXyTable) => {
+        if (!mapVisibilityToggle) {
+          return;
+        }
+        mapVisibilityToggle.checked = hasActiveXyTable && currentXyIndex === 0;
+        updateMapVisibility();
+      };
 
       const updatePanels = () => {
         const selectedValue = select.value;
@@ -192,6 +212,7 @@
           xyTables.forEach((table) => {
             table.hidden = true;
           });
+          syncMapVisibilityWithXyTable(false);
           return;
         }
 
@@ -210,6 +231,7 @@
         if (xyUpdown) {
           xyUpdown.hidden = activeXyTables.length <= 1;
         }
+        syncMapVisibilityWithXyTable(true);
       };
 
       const updateTitle = () => {
@@ -250,6 +272,10 @@
           currentXyIndex = (currentXyIndex + 1) % activeXyTables.length;
           updateXyTables();
         });
+      }
+
+      if (mapVisibilityToggle) {
+        mapVisibilityToggle.addEventListener("change", updateMapVisibility);
       }
 
       select.addEventListener("change", () => {

@@ -1,0 +1,1032 @@
+{
+  "type": "FeatureCollection",
+  "name": "test_many_sokuten",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:EPSG::6680"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.1",
+        "name": "No.1",
+        "number": 1,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          100,
+          0
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.2",
+        "name": "No.2",
+        "number": 2,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          99.452,
+          10.453
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.3",
+        "name": "No.3",
+        "number": 3,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          97.815,
+          20.791
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.4",
+        "name": "No.4",
+        "number": 4,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          95.106,
+          30.902
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.5",
+        "name": "No.5",
+        "number": 5,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          91.355,
+          40.674
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.6",
+        "name": "No.6",
+        "number": 6,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          86.603,
+          50
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.7",
+        "name": "No.7",
+        "number": 7,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          80.902,
+          58.779
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.8",
+        "name": "No.8",
+        "number": 8,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.314,
+          66.913
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.9",
+        "name": "No.9",
+        "number": 9,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          66.913,
+          74.314
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.10",
+        "name": "No.10",
+        "number": 10,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          58.779,
+          80.902
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.11",
+        "name": "No.11",
+        "number": 11,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          50,
+          86.603
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.12",
+        "name": "No.12",
+        "number": 12,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          40.674,
+          91.355
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.13",
+        "name": "No.13",
+        "number": 13,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          30.902,
+          95.106
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.14",
+        "name": "No.14",
+        "number": 14,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          20.791,
+          97.815
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.15",
+        "name": "No.15",
+        "number": 15,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.453,
+          99.452
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.16",
+        "name": "No.16",
+        "number": 16,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0,
+          100
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.17",
+        "name": "No.17",
+        "number": 17,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -10.453,
+          99.452
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.18",
+        "name": "No.18",
+        "number": 18,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -20.791,
+          97.815
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.19",
+        "name": "No.19",
+        "number": 19,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -30.902,
+          95.106
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.20",
+        "name": "No.20",
+        "number": 20,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -40.674,
+          91.355
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.21",
+        "name": "No.21",
+        "number": 21,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -50,
+          86.603
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.22",
+        "name": "No.22",
+        "number": 22,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -58.779,
+          80.902
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.23",
+        "name": "No.23",
+        "number": 23,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -66.913,
+          74.314
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.24",
+        "name": "No.24",
+        "number": 24,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -74.314,
+          66.913
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.25",
+        "name": "No.25",
+        "number": 25,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -80.902,
+          58.779
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.26",
+        "name": "No.26",
+        "number": 26,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -86.603,
+          50
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.27",
+        "name": "No.27",
+        "number": 27,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -91.355,
+          40.674
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.28",
+        "name": "No.28",
+        "number": 28,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -95.106,
+          30.902
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.29",
+        "name": "No.29",
+        "number": 29,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -97.815,
+          20.791
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.30",
+        "name": "No.30",
+        "number": 30,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -99.452,
+          10.453
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.31",
+        "name": "No.31",
+        "number": 31,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -100,
+          0
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.32",
+        "name": "No.32",
+        "number": 32,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -99.452,
+          -10.453
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.33",
+        "name": "No.33",
+        "number": 33,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -97.815,
+          -20.791
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.34",
+        "name": "No.34",
+        "number": 34,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -95.106,
+          -30.902
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.35",
+        "name": "No.35",
+        "number": 35,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -91.355,
+          -40.674
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.36",
+        "name": "No.36",
+        "number": 36,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -86.603,
+          -50
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.37",
+        "name": "No.37",
+        "number": 37,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -80.902,
+          -58.779
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.38",
+        "name": "No.38",
+        "number": 38,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -74.314,
+          -66.913
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.39",
+        "name": "No.39",
+        "number": 39,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -66.913,
+          -74.314
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.40",
+        "name": "No.40",
+        "number": 40,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -58.779,
+          -80.902
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.41",
+        "name": "No.41",
+        "number": 41,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -50,
+          -86.603
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.42",
+        "name": "No.42",
+        "number": 42,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -40.674,
+          -91.355
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.43",
+        "name": "No.43",
+        "number": 43,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -30.902,
+          -95.106
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.44",
+        "name": "No.44",
+        "number": 44,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -20.791,
+          -97.815
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.45",
+        "name": "No.45",
+        "number": 45,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -10.453,
+          -99.452
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.46",
+        "name": "No.46",
+        "number": 46,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0,
+          -100
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.47",
+        "name": "No.47",
+        "number": 47,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.453,
+          -99.452
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.48",
+        "name": "No.48",
+        "number": 48,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          20.791,
+          -97.815
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.49",
+        "name": "No.49",
+        "number": 49,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          30.902,
+          -95.106
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.50",
+        "name": "No.50",
+        "number": 50,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          40.674,
+          -91.355
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.51",
+        "name": "No.51",
+        "number": 51,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          50,
+          -86.603
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.52",
+        "name": "No.52",
+        "number": 52,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          58.779,
+          -80.902
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.53",
+        "name": "No.53",
+        "number": 53,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          66.913,
+          -74.314
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.54",
+        "name": "No.54",
+        "number": 54,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          74.314,
+          -66.913
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.55",
+        "name": "No.55",
+        "number": 55,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          80.902,
+          -58.779
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.56",
+        "name": "No.56",
+        "number": 56,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          86.603,
+          -50
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.57",
+        "name": "No.57",
+        "number": 57,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          91.355,
+          -40.674
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.58",
+        "name": "No.58",
+        "number": 58,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          95.106,
+          -30.902
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.59",
+        "name": "No.59",
+        "number": 59,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          97.815,
+          -20.791
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "林班": "多測点テスト",
+        "測点": "No.60",
+        "name": "No.60",
+        "number": 60,
+        "type": "周囲"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          99.452,
+          -10.453
+        ]
+      }
+    }
+  ]
+}

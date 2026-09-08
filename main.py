@@ -15,7 +15,7 @@ from qgis.core import (
     QgsProject, QgsPrintLayout, QgsLayoutItemMap, QgsLayoutPoint, QgsLayoutSize, QgsUnitTypes, QgsLayoutExporter,
     QgsPalLayerSettings, QgsExpression, QgsExpressionContext, QgsExpressionContextUtils, QgsLayoutItemLabel, QgsLayoutItemPicture,
     QgsLayoutItemScaleBar,
-    QgsSettings, QgsCoordinateReferenceSystem, QgsVectorFileWriter, QgsReadWriteContext,
+    QgsCoordinateReferenceSystem, QgsVectorFileWriter, QgsReadWriteContext,
     QgsFeature, QgsField, QgsGeometry, QgsVectorLayer,
 )
 from qgis.PyQt import uic
@@ -88,7 +88,6 @@ class Main(QDockWidget, FORM_CLASS):
         self.setup_color_buttons()
         self.setup_shui_toolbox()
         self.setup_haisui_toolbox()
-        self.restore_settings()
         self.update_save_config_enabled()
 
         # Dynamic controls above affect the tab's required height.  Preserve
@@ -106,7 +105,6 @@ class Main(QDockWidget, FORM_CLASS):
         if not self.validate_inputs():
             return
 
-        self.save_settings()
         self.progressBar.setValue(0)
 
         final_output_dir = Path(self.fileName.filePath())
@@ -417,25 +415,18 @@ class Main(QDockWidget, FORM_CLASS):
             return False
 
         self.append_output_log(f"設定ファイルを書き込みました: {path}")
-        self.save_settings()
         return True
 
     def load_config_dialog(self):
-        settings = QgsSettings()
-        initial_path = self.clean_html_text(
-            settings.value(self.settings_key("lastReadConfig"), self.saveConfig.filePath())
-        )
         path, _ = QFileDialog.getOpenFileName(
             self,
             "設定ファイルを読み込む",
-            initial_path,
+            "",
             "設定ファイル (*.config);;すべてのファイル (*)",
         )
         if not path:
             return
-        if self.load_config_file(path):
-            settings.setValue(self.settings_key("lastReadConfig"), path)
-            self.save_settings()
+        self.load_config_file(path)
 
     def load_config_file(self, path):
         path = Path(path)
@@ -720,134 +711,6 @@ class Main(QDockWidget, FORM_CLASS):
         label_layer.setLabelsEnabled(True)
         self.apply_layer_color(label_layer, QColor("black"), include_labels=True)
         return label_layer
-
-    def settings_key(self, name):
-        return f"zumen/{name}"
-
-    def save_settings(self):
-        # QGIS側の入力保持は固定配置の項目だけを対象にする。
-        # 可変個数の周囲・排水ページは明示的に保存する .config だけに含める。
-        settings = QgsSettings()
-
-        for name in [
-            "sokuryosha",
-            "sokuryojigyosha",
-            "rinshohan",
-            "sanrinshoyusha",
-            "seizujigyosha",
-            "seizusha",
-            "haisuiType",
-        ]:
-            settings.setValue(self.settings_key(name), getattr(self, name).text())
-
-        settings.setValue(self.settings_key("sokuryobi"), self.sokuryobi.date().toString("yyyy-MM-dd"))
-        settings.setValue(self.settings_key("seizubi"), self.seizubi.date().toString("yyyy-MM-dd"))
-        settings.setValue(self.settings_key("scale"), self.scale.scale())
-        settings.setValue(self.settings_key("crs"), self.crs.crs().authid())
-        settings.setValue(self.settings_key("fileName"), self.fileName.filePath())
-        settings.setValue(self.settings_key("saveConfig"), self.saveConfig.filePath())
-        settings.setValue(self.settings_key("isSaveConfig"), self.isSaveConfig.currentIndex())
-        settings.setValue(self.settings_key("ketasu"), self.ketasu.value())
-        settings.setValue(self.settings_key("minEx"), self.minEx.value())
-        settings.setValue(self.settings_key("isJochikeisan"), self.isJochikeisan.isChecked())
-        settings.setValue(self.settings_key("isIchizu"), self.isIchizu.isChecked())
-        settings.setValue(self.settings_key("isShui"), self.isShui.isChecked())
-        settings.setValue(self.settings_key("isHaisui"), self.isHaisui.isChecked())
-        for name in ("shui_color", "haisui_color"):
-            color = self.selected_color(getattr(self, name))
-            settings.setValue(
-                self.settings_key(name),
-                color.name() if color is not None else "",
-            )
-
-    def restore_settings(self):
-        settings = QgsSettings()
-
-        for name in [
-            "sokuryosha",
-            "sokuryojigyosha",
-            "rinshohan",
-            "sanrinshoyusha",
-            "seizujigyosha",
-            "seizusha",
-            "haisuiType",
-        ]:
-            value = settings.value(self.settings_key(name), "")
-            if value:
-                getattr(self, name).setText(str(value))
-
-        self.restore_date_setting(settings, "sokuryobi", self.sokuryobi)
-        self.restore_date_setting(settings, "seizubi", self.seizubi)
-
-        scale_value = settings.value(self.settings_key("scale"), "")
-        if scale_value not in ("", None):
-            try:
-                self.scale.setScale(float(scale_value))
-            except (TypeError, ValueError):
-                pass
-
-        crs_value = settings.value(self.settings_key("crs"), "")
-        if crs_value:
-            crs = QgsCoordinateReferenceSystem(str(crs_value))
-            if crs.isValid():
-                self.crs.setCrs(crs)
-
-        file_path = settings.value(self.settings_key("fileName"), "")
-        if file_path:
-            self.fileName.setFilePath(str(file_path))
-
-        config_path = settings.value(self.settings_key("saveConfig"), "")
-        if config_path:
-            self.saveConfig.setFilePath(str(config_path))
-
-        save_config_mode = settings.value(self.settings_key("isSaveConfig"), 0)
-        try:
-            save_config_mode = int(save_config_mode)
-        except (TypeError, ValueError):
-            save_config_mode = 0
-        self.isSaveConfig.setCurrentIndex(
-            save_config_mode if save_config_mode in (0, 1, 2) else 0
-        )
-        self.update_save_config_enabled()
-
-        ketasu_value = settings.value(self.settings_key("ketasu"), "")
-        if ketasu_value not in ("", None):
-            try:
-                self.ketasu.setValue(int(ketasu_value))
-            except (TypeError, ValueError):
-                pass
-
-        min_ex_value = settings.value(self.settings_key("minEx"), "")
-        if min_ex_value not in ("", None):
-            try:
-                self.minEx.setValue(float(min_ex_value))
-            except (TypeError, ValueError):
-                pass
-
-        self.isJochikeisan.setChecked(self.settings_bool(settings, "isJochikeisan", False))
-        self.isIchizu.setChecked(self.settings_bool(settings, "isIchizu", False))
-        self.isShui.setChecked(self.settings_bool(settings, "isShui", False))
-        self.isHaisui.setChecked(self.settings_bool(settings, "isHaisui", False))
-
-        for name in ("shui_color", "haisui_color"):
-            value = settings.value(self.settings_key(name), "")
-            color = QColor(str(value)) if value else QColor()
-            if color.isValid():
-                getattr(self, name).setColor(color)
-
-    def settings_bool(self, settings, name, default=False):
-        value = settings.value(self.settings_key(name), default)
-        if isinstance(value, bool):
-            return value
-        return str(value).lower() in ("1", "true", "yes")
-
-    def restore_date_setting(self, settings, name, widget):
-        value = settings.value(self.settings_key(name), "")
-        for fmt in ("yyyy-MM-dd", "yyyy年MM月dd日"):
-            date = QDate.fromString(str(value), fmt)
-            if date.isValid():
-                widget.setDate(date)
-                return
 
     def setup_shui_toolbox(self):
         while self.shuiToolBox.count() > 0:
@@ -1555,7 +1418,7 @@ class Main(QDockWidget, FORM_CLASS):
             self.add_shui_detail_item(
                 map_details[0], f"map_area_{option_panel}", option_panel,
                 "面積\u00a0", self.format_area_int(area),
-                f"m² \u2243 {self.format_area_ha(area)}ha",
+                "m²",
                 before_id="scale_",
             )
 
