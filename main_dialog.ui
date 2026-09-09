@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>673</width>
-    <height>784</height>
+    <height>816</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -177,6 +177,32 @@
             </property>
            </widget>
           </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="label_17">
+            <property name="text">
+             <string>測点並べ替え</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QComboBox" name="hyouOrder">
+            <item>
+             <property name="text">
+              <string>しない</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>昇順</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>降順</string>
+             </property>
+            </item>
+           </widget>
+          </item>
          </layout>
         </widget>
        </item>
@@ -292,7 +318,7 @@
             </property>
            </widget>
           </item>
-          <item row="12" column="0">
+          <item row="13" column="0">
            <widget class="QLabel" name="qgisLabel">
             <property name="text">
              <string/>
@@ -309,6 +335,20 @@
             </property>
             <property name="value">
              <double>1.000000000000000</double>
+            </property>
+           </widget>
+          </item>
+          <item row="12" column="0">
+           <widget class="QLabel" name="label_27">
+            <property name="text">
+             <string>QGZのバックアップ作成</string>
+            </property>
+           </widget>
+          </item>
+          <item row="12" column="1">
+           <widget class="QCheckBox" name="backupQgz">
+            <property name="text">
+             <string>する</string>
             </property>
            </widget>
           </item>
@@ -399,8 +439,8 @@
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>99</width>
-            <height>50</height>
+            <width>627</width>
+            <height>652</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout_10">
@@ -449,8 +489,8 @@
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>99</width>
-            <height>134</height>
+            <width>627</width>
+            <height>652</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout_12">
@@ -471,8 +511,8 @@
                <rect>
                 <x>0</x>
                 <y>0</y>
-                <width>300</width>
-                <height>328</height>
+                <width>609</width>
+                <height>572</height>
                </rect>
               </property>
               <attribute name="label">

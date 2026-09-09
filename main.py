@@ -22,12 +22,17 @@ from qgis.PyQt import uic
 import os
 from lxml import etree as ET
 from pathlib import Path
+from decimal import Decimal
+from datetime import datetime
+from numbers import Number
 import processing
 from html import escape
 import math
+import re
 import shutil
 import tempfile
 import json
+import unicodedata
 from .editable_projects import EditableProjects
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), "main_dialog.ui"))
@@ -149,7 +154,11 @@ class Main(QDockWidget, FORM_CLASS):
                 self.progressBar.setValue(0)
                 return
 
-            if not self.commit_staged_output(staging_dir, final_output_dir):
+            if not self.commit_staged_output(
+                staging_dir,
+                final_output_dir,
+                backup_qgz=self.backupQgz.isChecked(),
+            ):
                 self.progressBar.setValue(0)
                 return
 
@@ -190,10 +199,12 @@ class Main(QDockWidget, FORM_CLASS):
             return path
         return Path(self._final_output_dir) / relative_path
 
-    def commit_staged_output(self, staging_dir, final_output_dir):
+    def commit_staged_output(self, staging_dir, final_output_dir, backup_qgz=False):
         staging_dir = Path(staging_dir)
         final_output_dir = Path(final_output_dir)
         backup_dir = staging_dir / ".backup"
+        current_qgz_dir = final_output_dir / "qgz"
+        qgz_backup_dir = None
         staged_files = [
             path
             for path in staging_dir.rglob("*")
@@ -202,6 +213,17 @@ class Main(QDockWidget, FORM_CLASS):
         committed = []
 
         try:
+            if backup_qgz and current_qgz_dir.is_dir():
+                created_at = datetime.fromtimestamp(
+                    current_qgz_dir.stat().st_ctime
+                ).strftime("%Y%m%d-%H%M%S")
+                qgz_backup_dir = final_output_dir / f"qgz-{created_at}"
+                suffix = 2
+                while qgz_backup_dir.exists():
+                    qgz_backup_dir = final_output_dir / f"qgz-{created_at}-{suffix}"
+                    suffix += 1
+                os.replace(current_qgz_dir, qgz_backup_dir)
+
             for source_path in staged_files:
                 relative_path = source_path.relative_to(staging_dir)
                 target_path = final_output_dir / relative_path
@@ -231,6 +253,20 @@ class Main(QDockWidget, FORM_CLASS):
                     if backup_path is not None and backup_path.exists():
                         target_path.parent.mkdir(parents=True, exist_ok=True)
                         os.replace(backup_path, target_path)
+                except OSError:
+                    pass
+
+            if qgz_backup_dir is not None and qgz_backup_dir.exists():
+                try:
+                    if current_qgz_dir.exists():
+                        resolved_qgz = current_qgz_dir.resolve()
+                        if (
+                            resolved_qgz.parent != final_output_dir.resolve()
+                            or resolved_qgz.name != "qgz"
+                        ):
+                            raise OSError(f"復旧対象外のフォルダです: {resolved_qgz}")
+                        shutil.rmtree(resolved_qgz)
+                    os.replace(qgz_backup_dir, current_qgz_dir)
                 except OSError:
                     pass
 
@@ -325,6 +361,7 @@ class Main(QDockWidget, FORM_CLASS):
             },
             "map": {
                 "coordinate_decimals": self.ketasu.value(),
+                "xy_table_order": self.hyouOrder.currentIndex(),
                 "scale": self.scale.scale(),
                 "crs": self.crs.crs().authid(),
                 "show_deduction": self.isJochikeisan.isChecked(),
@@ -336,6 +373,7 @@ class Main(QDockWidget, FORM_CLASS):
             },
             "output": {
                 "directory": self.fileName.filePath(),
+                "backup_qgz": self.backupQgz.isChecked(),
                 "config_save_mode": self.isSaveConfig.currentIndex(),
                 "config_file": self.saveConfig.filePath(),
             },
@@ -481,6 +519,13 @@ class Main(QDockWidget, FORM_CLASS):
 
         decimals = map_settings.get("coordinate_decimals", self.ketasu.minimum())
         self.ketasu.setValue(int(decimals or 0))
+        try:
+            xy_table_order = int(map_settings.get("xy_table_order", 0) or 0)
+        except (TypeError, ValueError):
+            xy_table_order = 0
+        self.hyouOrder.setCurrentIndex(
+            xy_table_order if xy_table_order in (0, 1, 2) else 0
+        )
         scale = map_settings.get("scale")
         if scale not in (None, ""):
             self.scale.setScale(float(scale))
@@ -498,6 +543,7 @@ class Main(QDockWidget, FORM_CLASS):
         self.set_color_from_config(self.shui_color, map_settings.get("perimeter_color", ""))
         self.set_color_from_config(self.haisui_color, map_settings.get("drainage_color", ""))
         self.fileName.setFilePath(self.clean_html_text(output.get("directory")))
+        self.backupQgz.setChecked(bool(output.get("backup_qgz", False)))
         self.saveConfig.setFilePath(self.clean_html_text(output.get("config_file")))
         try:
             save_mode = int(output.get("config_save_mode", 0) or 0)
@@ -711,6 +757,12 @@ class Main(QDockWidget, FORM_CLASS):
         settings.obstacle = True
         settings.obstacleFactor = 2.0
         settings.obstacleType = QgsPalLayerSettings.ObstacleType.PolygonBoundary
+        placement_settings = settings.placementSettings()
+        placement_settings.setOverlapHandling(
+            Qgis.LabelOverlapHandling.PreventOverlap
+        )
+        placement_settings.setAllowDegradedPlacement(True)
+        settings.setPlacementSettings(placement_settings)
         text_format = settings.format()
         text_format.setFont(QFont("Yu Gothic"))
         text_format.setSize(9)
@@ -1012,9 +1064,10 @@ class Main(QDockWidget, FORM_CLASS):
             if jochi_terms else f"{self.format_length(jochi_distance)}m"
         )
         area_deduction_detail = (
-            f"{' + '.join(area_terms)} = {self.format_area_int(area_deduction)}m²"
-            if area_terms else f"{self.format_area_int(area_deduction)}m²"
+            f"{' + '.join(area_terms)} = {self.format_area_decimal(area_deduction)}m²"
+            if area_terms else f"{self.format_area_decimal(area_deduction)}m²"
         )
+        area_deduction_detail += f" ≃ {self.format_area_int(area_deduction)}m²"
         area_diff_area = f"{self.format_area_int(area_diff)}m²"
         area_diff_ha = f"{self.format_area_ha(area_diff)}ha"
         area_diff_result = f"{area_diff_area} ≃ {area_diff_ha}"
@@ -1038,8 +1091,12 @@ class Main(QDockWidget, FORM_CLASS):
         )
         area_deduction_math = self.latex_sum_parts(
             [self.latex_area_term(item) for item in jochi_items],
-            self.latex_quantity(area_deduction, r"\mathrm{m}^{2}", self.format_area_int),
+            self.latex_quantity(area_deduction, r"\mathrm{m}^{2}", self.format_area_decimal),
         )
+        area_deduction_math.extend([
+            ("≃", r"\simeq"),
+            self.latex_quantity(area_deduction, r"\mathrm{m}^{2}", self.format_area_int),
+        ])
         if len(perimeter_area_math_terms) > 1:
             perimeter_area_math = self.latex_sum_parts(
                 perimeter_area_math_terms,
@@ -1108,10 +1165,6 @@ class Main(QDockWidget, FORM_CLASS):
                 minimum_exclusion_area_text,
             )
             self.set_latex_parts(root, "box4", area_deduction_math)
-            self.set_latex_parts(root, "box5", [
-                ("≃", r"\simeq"),
-                self.latex_quantity(area_deduction, r"\mathrm{m}^{2}", self.format_area_int),
-            ])
             self.set_latex_parts(root, "box7", perimeter_area_math)
             self.set_latex_parts(root, "box10", area_diff_math)
 
@@ -1120,6 +1173,9 @@ class Main(QDockWidget, FORM_CLASS):
 
     def format_area_int(self, value):
         return str(round(float(value or 0)))
+
+    def format_area_decimal(self, value):
+        return f"{float(value or 0):.1f}"
 
     def format_area_ha(self, value):
         return f"{math.trunc((float(value or 0) / 10000) * 100) / 100:.2f}"
@@ -1323,11 +1379,19 @@ class Main(QDockWidget, FORM_CLASS):
         for table in xy_container.xpath(f".//table[@data-xy-table and @data-option-panel='{option_panel}']"):
             table.getparent().remove(table)
 
+        ordered_rows = list(xy_table_rows)
+        order = self.hyouOrder.currentIndex()
+        if order in (1, 2):
+            ordered_rows.sort(
+                key=self.xy_table_row_sort_key,
+                reverse=order == 2,
+            )
+
         # 測地系名が2行になっても下枠に収まるよう、1ページ24点にする。
         rows_per_table = 24
         chunks = [
-            xy_table_rows[i:i + rows_per_table]
-            for i in range(0, len(xy_table_rows), rows_per_table)
+            ordered_rows[i:i + rows_per_table]
+            for i in range(0, len(ordered_rows), rows_per_table)
         ]
 
         for index, rows in enumerate(chunks, start=1):
@@ -1338,6 +1402,43 @@ class Main(QDockWidget, FORM_CLASS):
             xy_container.append(table)
 
         self.show_xy_updown(root, option_panel, len(chunks))
+
+    def xy_table_row_sort_key(self, row):
+        if isinstance(row, dict):
+            return self.measurement_name_sort_key(row.get("sort_value"))
+        try:
+            row_element = ET.fromstring(row)
+            name_cell = row_element.find("td")
+            name = "" if name_cell is None else "".join(name_cell.itertext())
+        except (ET.XMLSyntaxError, TypeError, ValueError):
+            name = row
+        return self.measurement_name_sort_key(name)
+
+    def measurement_name_sort_key(self, value):
+        if value is None:
+            return (0,)
+        if isinstance(value, bool):
+            return (1, int(value))
+        if isinstance(value, (Number, Decimal)) and not isinstance(value, complex):
+            number = float(value)
+            if math.isnan(number):
+                return (2, 1, 0.0)
+            return (2, 0, number)
+
+        text = unicodedata.normalize(
+            "NFKC",
+            self.clean_html_text(value),
+        ).casefold()
+        natural_parts = tuple(
+            (1, int(part), len(part)) if part.isdecimal() else (0, part)
+            for part in re.split(r"(\d+)", text)
+        )
+        return (3, natural_parts)
+
+    def xy_table_row_html(self, row):
+        if isinstance(row, dict):
+            return self.clean_html_text(row.get("html"))
+        return self.clean_html_text(row)
 
     def create_xy_table(self, option_panel, index, rows):
         table = ET.Element(
@@ -1356,7 +1457,9 @@ class Main(QDockWidget, FORM_CLASS):
             th.text = label
 
         tbody = ET.SubElement(table, "tbody", id=f"xy_table_body_{option_panel}_{index}")
-        rows_root = ET.fromstring(f"<tbody>{''.join(rows)}</tbody>")
+        rows_root = ET.fromstring(
+            f"<tbody>{''.join(self.xy_table_row_html(row) for row in rows)}</tbody>"
+        )
         tbody.extend(rows_root)
 
         return table
@@ -1694,7 +1797,7 @@ class Main(QDockWidget, FORM_CLASS):
         return model
     
     def map_make(self, test=False):
-        self._editable_projects = EditableProjects(self.output_dir() / "qgs") if not test else None
+        self._editable_projects = EditableProjects(self.output_dir() / "qgz") if not test else None
         if self.isShui.isChecked():
             total_length = 0.0
             total_area = 0
@@ -1919,7 +2022,8 @@ class Main(QDockWidget, FORM_CLASS):
             return False
 
         self.set_location_picture_paths(layout, style_dir)
-        self.set_location_label_text(layout)
+        if not self.set_location_label_text(layout):
+            return False
 
         map_item = layout.itemById("地図 1")
         if not isinstance(map_item, QgsLayoutItemMap):
@@ -1964,7 +2068,12 @@ class Main(QDockWidget, FORM_CLASS):
             return False
 
         self.append_output_log(f"位置図PDFを書き込みました: {displayed_path}")
-        self._editable_projects.capture(layout, "location", output_path.name)
+        self._editable_projects.capture(
+            layout,
+            "location",
+            output_path.name,
+            persistent_layers=self.editable_result_layers(),
+        )
         return True
 
     def location_line_layers(self):
@@ -2038,16 +2147,22 @@ class Main(QDockWidget, FORM_CLASS):
         return True
 
     def set_location_label_text(self, layout):
-        text = "\n".join([
-            self.clean_html_text(self.sanrinshoyusha.text()),
-            self.clean_html_text(self.rinshohan.text()),
-        ]).strip()
+        title_label = layout.itemById("位置図タイトル")
+        if not isinstance(title_label, QgsLayoutItemLabel):
+            QMessageBox.warning(
+                self,
+                "エラー",
+                "位置図テンプレート内にタイトルラベルがありません"
+            )
+            return False
 
-        for item in layout.items():
-            if isinstance(item, QgsLayoutItemLabel) and not self.clean_html_text(item.text()).strip():
-                item.setText(text)
-                item.adjustSizeToText()
-                return
+        parts = [
+            self.clean_html_text(self.rinshohan.text()).strip(),
+            self.clean_html_text(self.sanrinshoyusha.text()).strip(),
+        ]
+        title_label.setText("　".join(part for part in parts if part))
+        title_label.update()
+        return True
 
     def first_layout_map_item(self, layout):
         for item in layout.items():
@@ -2107,9 +2222,18 @@ class Main(QDockWidget, FORM_CLASS):
         self._editable_projects.save()
         self.append_output_log(
             f"編集用QGZ・GeoPackage・操作説明を書き込みました: "
-            f"{self.displayed_output_path(self.output_dir() / 'qgs')}"
+            f"{self.displayed_output_path(self.output_dir() / 'qgz')}"
         )
         return True
+
+    def editable_result_layers(self):
+        layers = []
+        for page in [*self.shuis, *self.haisuis]:
+            for attribute in ("pt_layer", "line_layer"):
+                layer = getattr(page, attribute, None)
+                if layer is not None:
+                    layers.append(layer)
+        return layers
 
     def safe_gpkg_layer_name(self, value):
         text = self.clean_html_text(value).strip()
@@ -2131,7 +2255,7 @@ class Main(QDockWidget, FORM_CLASS):
     def feature_name_from_expression(self, layer, feature, name_expression):
         name_expression = self.clean_html_text(name_expression).strip()
         if not name_expression:
-            return self.clean_html_text(feature["name"]).strip()
+            return feature["name"]
 
         expression = QgsExpression(name_expression)
         if expression.hasParserError():
@@ -2145,7 +2269,7 @@ class Main(QDockWidget, FORM_CLASS):
         if expression.hasEvalError():
             raise ValueError(f"測点名の評価に失敗しました: {expression.evalErrorString()}")
 
-        return self.clean_html_text(value).strip()
+        return value
 
     def point_layer_to_html_rows(self, layer, name_expression=None):
         rows = []
@@ -2164,15 +2288,19 @@ class Main(QDockWidget, FORM_CLASS):
         for f in layer.getFeatures():
             try:
                 raw_name = self.feature_name_from_expression(layer, f, name_expression)
-                name = escape(raw_name)
+                name = escape(self.clean_html_text(raw_name).strip())
                 x = float(f["x"])
                 y = float(f["y"])
             except (KeyError, TypeError, ValueError) as e:
                 raise ValueError(f"座標表の作成に失敗しました feature id={f.id()}") from e
 
-            rows.append(
-                f"<tr><td>{name}</td><td>{self.format_coordinate(x)}</td><td>{self.format_coordinate(y)}</td></tr>"
-            )
+            rows.append({
+                "sort_value": raw_name,
+                "html": (
+                    f"<tr><td>{name}</td><td>{self.format_coordinate(x)}</td>"
+                    f"<td>{self.format_coordinate(y)}</td></tr>"
+                ),
+            })
 
         return rows
 
@@ -2271,7 +2399,12 @@ class Main(QDockWidget, FORM_CLASS):
             )
             return False
 
-        self._editable_projects.capture(layout, prefix, f"asset/{prefix}_map.png")
+        self._editable_projects.capture(
+            layout,
+            prefix,
+            f"asset/{prefix}_map.png",
+            persistent_layers=self.editable_result_layers(),
+        )
         return True
 
 class ShuiPage(QWidget):
