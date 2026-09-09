@@ -9,5 +9,3 @@ __pycache__/
 *.log
 
 test/
-sample/*
-!sample/test_many_sokuten.geojson

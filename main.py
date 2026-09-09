@@ -28,6 +28,7 @@ import math
 import shutil
 import tempfile
 import json
+from .editable_projects import EditableProjects
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), "main_dialog.ui"))
 
@@ -640,6 +641,11 @@ class Main(QDockWidget, FORM_CLASS):
             escaped_text = label_text.replace("'", "''")
             settings.fieldName = f"'{escaped_text}'"
             settings.isExpression = True
+            text_format = settings.format()
+            text_format.setFont(QFont("Yu Gothic"))
+            text_format.setSize(9)
+            text_format.setSizeUnit(Qgis.RenderUnit.Points)
+            settings.setFormat(text_format)
             layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
             layer.setLabelsEnabled(True)
         else:
@@ -648,7 +654,7 @@ class Main(QDockWidget, FORM_CLASS):
         self.apply_layer_color(layer, color, include_labels=True)
 
     def create_mix_perimeter_label_layer(self, pages):
-        """Create one obstacle-aware polygon layer for all perimeter callouts."""
+        """Place perimeter names near their polygons without leader lines."""
         named_pages = [
             page for page in pages
             if page.line_layer is not None
@@ -689,8 +695,7 @@ class Main(QDockWidget, FORM_CLASS):
         if symbol is not None:
             symbol.setOpacity(0)
 
-        # Reuse the established callout appearance, then let the polygon label
-        # engine place all perimeter names together outside every surrounding area.
+        # Place all names together so adjacent polygons share collision detection.
         template_layer = named_pages[0].line_layer
         labeling = template_layer.labeling()
         settings = labeling.settings() if labeling else QgsPalLayerSettings()
@@ -700,12 +705,16 @@ class Main(QDockWidget, FORM_CLASS):
         settings.geometryGenerator = ""
         settings.geometryGeneratorType = QgsWkbTypes.PolygonGeometry
         settings.placement = Qgis.LabelPlacement.OutsidePolygons
-        settings.dist = 6.0
+        settings.dist = 1.5
+        if settings.callout() is not None:
+            settings.callout().setEnabled(False)
         settings.obstacle = True
         settings.obstacleFactor = 2.0
-        settings.obstacleType = QgsPalLayerSettings.ObstacleType.PolygonWhole
+        settings.obstacleType = QgsPalLayerSettings.ObstacleType.PolygonBoundary
         text_format = settings.format()
         text_format.setFont(QFont("Yu Gothic"))
+        text_format.setSize(9)
+        text_format.setSizeUnit(Qgis.RenderUnit.Points)
         settings.setFormat(text_format)
         label_layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
         label_layer.setLabelsEnabled(True)
@@ -1685,6 +1694,7 @@ class Main(QDockWidget, FORM_CLASS):
         return model
     
     def map_make(self, test=False):
+        self._editable_projects = EditableProjects(self.output_dir() / "qgs") if not test else None
         if self.isShui.isChecked():
             total_length = 0.0
             total_area = 0
@@ -1713,6 +1723,9 @@ class Main(QDockWidget, FORM_CLASS):
                     page.pt_layer = result['shui_pt']
                     page.line_layer = result['shui']
                     page.area_layer = result['area']
+                    display_name = self.clean_html_text(values.get('name')).strip() or str(page.index)
+                    page.pt_layer.setName(f"周囲_{page.index}_{display_name}_点")
+                    page.line_layer.setName(f"周囲_{page.index}_{display_name}_線")
                     point_count = page.pt_layer.featureCount()
                     if point_count < 3:
                         raise ValueError(
@@ -1779,6 +1792,9 @@ class Main(QDockWidget, FORM_CLASS):
                     result = processing.run(make_layer, params)
                     page.pt_layer = result['haisui_pt']
                     page.line_layer = result['haisui']
+                    display_name = self.clean_html_text(values.get('name')).strip() or str(page.index)
+                    page.pt_layer.setName(f"排水_{page.index}_{display_name}_点")
+                    page.line_layer.setName(f"排水_{page.index}_{display_name}_線")
                     point_count = page.pt_layer.featureCount()
                     if point_count < 2:
                         raise ValueError(
@@ -1919,6 +1935,7 @@ class Main(QDockWidget, FORM_CLASS):
 
         map_item.setCrs(self.crs.crs())
         map_item.setLayers(self.location_map_layers(line_layers))
+        map_item.setKeepLayerSet(True)
 
         extent = self.combined_layer_extent(line_layers)
         if extent is not None:
@@ -1947,6 +1964,7 @@ class Main(QDockWidget, FORM_CLASS):
             return False
 
         self.append_output_log(f"位置図PDFを書き込みました: {displayed_path}")
+        self._editable_projects.capture(layout, "location", output_path.name)
         return True
 
     def location_line_layers(self):
@@ -2086,80 +2104,10 @@ class Main(QDockWidget, FORM_CLASS):
         return extent
 
     def save_result_layers_to_geopackage(self):
-        output_dir = self.output_dir()
-        gpkg_path = output_dir / "ringyo_zumen.gpkg"
-
-        layers = []
-        if self.isShui.isChecked():
-            for page in self.shuis:
-                if page.pt_layer is None or page.line_layer is None:
-                    continue
-                name = self.safe_gpkg_layer_name(page.values().get("name") or page.index)
-                layers.extend([
-                    {
-                        "layer": page.pt_layer,
-                        "name": f"周囲_{page.index}_{name}_点",
-                        "style": "point.qml",
-                    },
-                    {
-                        "layer": page.line_layer,
-                        "name": f"周囲_{page.index}_{name}_ライン",
-                        "style": "line.qml",
-                    },
-                ])
-
-        if self.isHaisui.isChecked():
-            for page in self.haisuis:
-                if page.pt_layer is None or page.line_layer is None:
-                    continue
-
-                name = self.safe_gpkg_layer_name(page.values().get("name") or page.index)
-                layers.extend([
-                    {
-                        "layer": page.pt_layer,
-                        "name": f"排水_{page.index}_{name}_点",
-                        "style": "mix_haisui_point.qml",
-                    },
-                    {
-                        "layer": page.line_layer,
-                        "name": f"排水_{page.index}_{name}_ライン",
-                        "style": "mix_haisui_line.qml",
-                    },
-                ])
-
-        if not layers:
-            return True
-
-        for i, item in enumerate(layers):
-            options = QgsVectorFileWriter.SaveVectorOptions()
-            options.driverName = "GPKG"
-            options.layerName = item["name"]
-            options.fileEncoding = "UTF-8"
-            options.actionOnExistingFile = (
-                QgsVectorFileWriter.CreateOrOverwriteFile
-                if i == 0
-                else QgsVectorFileWriter.CreateOrOverwriteLayer
-            )
-
-            result = QgsVectorFileWriter.writeAsVectorFormatV3(
-                item["layer"],
-                str(gpkg_path),
-                QgsProject.instance().transformContext(),
-                options,
-            )
-            error_code = result[0]
-            error_message = result[1] if len(result) > 1 else ""
-
-            if error_code != QgsVectorFileWriter.NoError:
-                QMessageBox.warning(
-                    self,
-                    "エラー",
-                    f"GeoPackageへの保存に失敗しました:\n{item['name']}\n{error_message}"
-                )
-                return False
-
+        self._editable_projects.save()
         self.append_output_log(
-            f"GeoPackageを書き込みました: {self.displayed_output_path(gpkg_path)}"
+            f"編集用QGZ・GeoPackage・操作説明を書き込みました: "
+            f"{self.displayed_output_path(self.output_dir() / 'qgs')}"
         )
         return True
 
@@ -2267,6 +2215,7 @@ class Main(QDockWidget, FORM_CLASS):
             return
 
         map_item.setLayers(target_layers)
+        map_item.setKeepLayerSet(True)
 
         # 縮尺をwidgetから読む
         scale = self.scale.scale()
@@ -2310,6 +2259,7 @@ class Main(QDockWidget, FORM_CLASS):
         exporter = QgsLayoutExporter(layout)
         settings = QgsLayoutExporter.ImageExportSettings()
         settings.dpi = 300
+        layout.renderContext().setDpi(300)
 
         result = exporter.exportToImage(output_path, settings)
         if result != QgsLayoutExporter.Success:
@@ -2321,6 +2271,7 @@ class Main(QDockWidget, FORM_CLASS):
             )
             return False
 
+        self._editable_projects.capture(layout, prefix, f"asset/{prefix}_map.png")
         return True
 
 class ShuiPage(QWidget):
