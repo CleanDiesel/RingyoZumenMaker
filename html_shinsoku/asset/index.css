@@ -148,7 +148,7 @@ h1 {
   border: .7mm solid black;
   width: 145mm;
   margin: 0 auto;
-  height: 44mm;
+  min-height: 24mm;
   display: flex;
 }
 #calc > div {
@@ -156,64 +156,38 @@ h1 {
   min-width: 0;
 }
 #calc_distance {
-  flex: 0 0 38%;
+  flex: 0 0 42%;
   border-right: .7mm solid black;
-  display: grid;
-  grid-template-rows: 1fr 1fr;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  gap: 2mm;
 }
 #calc_area {
-  flex: 1 1 62%;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  grid-template-rows: repeat(4, 1fr);
-  grid-template-areas:
-    "box1 box2"
-    "box3 box4"
-    "box6 box7"
-    "box9 box10";
-  column-gap: 2mm;
+  flex: 1 1 58%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  gap: 1.5mm;
 }
-#calc[data-has-drainage="0"] #calc_distance {
-  display: none;
-}
-#calc[data-has-drainage="0"] {
-  height: 24mm;
-}
-#calc[data-has-drainage="0"] #calc_area {
+#calc[data-side-count="1"] > div {
   flex-basis: 100%;
-  grid-template-rows: 1fr 1fr;
-  grid-template-areas:
-    "box6 box7"
-    "box9 box10";
+  border-right: 0;
 }
-#calc[data-has-drainage="0"] :is(#box1, #box2, #box3, #box4) {
-  display: none;
+.calc-row {
+  min-width: 0;
 }
-#box1 {
-  grid-area: box1;
+.calc-area-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 2mm;
+  align-items: start;
 }
-#box2 {
-  grid-area: box2;
+.calc-label {
+  white-space: nowrap;
 }
-#box3 {
-  grid-area: box3;
-}
-#box4 {
-  grid-area: box4;
-}
-#box6 {
-  grid-area: box6;
-}
-#box7 {
-  grid-area: box7;
-}
-#box9 {
-  grid-area: box9;
-}
-#box10 {
-  grid-area: box10;
-}
-#box2, #box4, #box7, #box10 {
+.calc-formula {
+  min-width: 0;
   text-align: right;
   overflow-wrap: anywhere;
 }
@@ -232,7 +206,7 @@ h1 {
   align-items: baseline;
   gap: .15em .4em;
 }
-#calc_distance .latex-flow {
+.calc-distance-row .latex-flow {
   justify-content: flex-start;
 }
 #calc .katex {

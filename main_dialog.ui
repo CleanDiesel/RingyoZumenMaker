@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>673</width>
-    <height>816</height>
+    <height>876</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -235,7 +235,7 @@
           <item row="3" column="0">
            <widget class="QLabel" name="label_26">
             <property name="text">
-             <string>排水・林内路網の除地計算を表示</string>
+             <string>全体図に計算を表示</string>
             </property>
            </widget>
           </item>
@@ -243,23 +243,6 @@
            <widget class="QCheckBox" name="isJochikeisan">
             <property name="text">
              <string>する</string>
-            </property>
-           </widget>
-          </item>
-          <item row="4" column="0">
-           <widget class="QLabel" name="label_25">
-            <property name="text">
-             <string>排水・林内路網等種別</string>
-            </property>
-           </widget>
-          </item>
-          <item row="4" column="1">
-           <widget class="QLineEdit" name="haisuiType">
-            <property name="enabled">
-             <bool>true</bool>
-            </property>
-            <property name="text">
-             <string>排水溝</string>
             </property>
            </widget>
           </item>
@@ -277,51 +260,10 @@
             </property>
            </widget>
           </item>
-          <item row="9" column="0">
-           <widget class="QLabel" name="label_16">
-            <property name="text">
-             <string>位置図周囲色</string>
-            </property>
-           </widget>
-          </item>
-          <item row="9" column="1">
-           <widget class="QgsColorButton" name="shui_color">
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
-            </property>
-           </widget>
-          </item>
-          <item row="10" column="0">
-           <widget class="QLabel" name="label_14">
-            <property name="text">
-             <string>位置図排水・林内路網色</string>
-            </property>
-           </widget>
-          </item>
-          <item row="10" column="1">
-           <widget class="QgsColorButton" name="haisui_color">
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
-            </property>
-           </widget>
-          </item>
           <item row="11" column="0">
            <widget class="QLabel" name="label_10">
             <property name="text">
              <string>最小除地面積</string>
-            </property>
-           </widget>
-          </item>
-          <item row="13" column="0">
-           <widget class="QLabel" name="qgisLabel">
-            <property name="text">
-             <string/>
             </property>
            </widget>
           </item>
@@ -349,6 +291,13 @@
            <widget class="QCheckBox" name="backupQgz">
             <property name="text">
              <string>する</string>
+            </property>
+           </widget>
+          </item>
+          <item row="14" column="0">
+           <widget class="QLabel" name="qgisLabel">
+            <property name="text">
+             <string/>
             </property>
            </widget>
           </item>
@@ -416,21 +365,24 @@
      </widget>
      <widget class="QWidget" name="tab_3">
       <attribute name="title">
-       <string>周囲</string>
+       <string>ポリゴン</string>
       </attribute>
       <layout class="QVBoxLayout" name="verticalLayout_6">
        <item>
         <widget class="QCheckBox" name="isShui">
          <property name="text">
-          <string>周囲の図面を出力</string>
+          <string>ポリゴンの図面を出力</string>
          </property>
          <property name="checked">
-          <bool>true</bool>
+          <bool>false</bool>
          </property>
         </widget>
        </item>
        <item>
         <widget class="QScrollArea" name="scrollArea_2">
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
          <property name="widgetResizable">
           <bool>true</bool>
          </property>
@@ -440,14 +392,14 @@
             <x>0</x>
             <y>0</y>
             <width>627</width>
-            <height>652</height>
+            <height>712</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout_10">
            <item>
             <widget class="QPushButton" name="shui_add">
              <property name="text">
-              <string>周囲を追加</string>
+              <string>ポリゴンを追加</string>
              </property>
             </widget>
            </item>
@@ -466,13 +418,13 @@
      </widget>
      <widget class="QWidget" name="tab_4">
       <attribute name="title">
-       <string>排水・林内路網</string>
+       <string>ライン</string>
       </attribute>
       <layout class="QVBoxLayout" name="verticalLayout_11">
        <item>
         <widget class="QCheckBox" name="isHaisui">
          <property name="text">
-          <string>排水・林内路網の図面を出力</string>
+          <string>ラインの図面を出力</string>
          </property>
         </widget>
        </item>
@@ -490,14 +442,14 @@
             <x>0</x>
             <y>0</y>
             <width>627</width>
-            <height>652</height>
+            <height>712</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout_12">
            <item>
             <widget class="QPushButton" name="haisui_add">
              <property name="text">
-              <string>排水を追加</string>
+              <string>ラインを追加</string>
              </property>
             </widget>
            </item>
@@ -512,7 +464,7 @@
                 <x>0</x>
                 <y>0</y>
                 <width>609</width>
-                <height>572</height>
+                <height>632</height>
                </rect>
               </property>
               <attribute name="label">
@@ -792,11 +744,6 @@
   </layout>
  </widget>
  <customwidgets>
-  <customwidget>
-   <class>QgsColorButton</class>
-   <extends>QToolButton</extends>
-   <header>qgscolorbutton.h</header>
-  </customwidget>
   <customwidget>
    <class>QgsFieldExpressionWidget</class>
    <extends>QWidget</extends>

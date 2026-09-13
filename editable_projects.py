@@ -9,7 +9,8 @@ from qgis.PyQt.QtXml import QDomDocument
 from qgis.core import (
     Qgis, QgsAuxiliaryLayer, QgsLayoutItemMap, QgsLayoutItemPicture,
     QgsMapLayerStyle, QgsPalLayerSettings, QgsPrintLayout, QgsProject,
-    QgsReadWriteContext, QgsReferencedRectangle, QgsVectorFileWriter,
+    QgsProperty, QgsPropertyDefinition, QgsReadWriteContext,
+    QgsReferencedRectangle, QgsVectorFileWriter,
     QgsVectorLayer,
 )
 
@@ -144,9 +145,30 @@ class EditableProjects:
                     if auxiliary is None:
                         raise RuntimeError(f"ラベル位置の保存領域を作成できません: {layer.name()}")
                     layer.setAuxiliaryLayer(auxiliary)
-                    for prop in (QgsPalLayerSettings.PositionX, QgsPalLayerSettings.PositionY):
-                        if QgsAuxiliaryLayer.createProperty(prop, layer) < 0:
-                            raise RuntimeError(f"ラベル移動の設定に失敗しました: {layer.name()}")
+                    labeling = layer.labeling()
+                    provider_ids = labeling.subProviders() or [""]
+                    for provider_index, provider_id in enumerate(provider_ids, start=1):
+                        settings = labeling.settings(provider_id)
+                        properties = settings.dataDefinedProperties()
+                        for prop, axis in (
+                            (QgsPalLayerSettings.PositionX, "x"),
+                            (QgsPalLayerSettings.PositionY, "y"),
+                        ):
+                            definition = QgsPropertyDefinition(
+                                f"label_{provider_index}_position_{axis}",
+                                f"Label {provider_index} position {axis.upper()}",
+                                QgsPropertyDefinition.StandardPropertyTemplate.Double,
+                                "labeling",
+                            )
+                            if not auxiliary.addAuxiliaryField(definition):
+                                raise RuntimeError(
+                                    f"ラベル移動の保存項目を作成できません: "
+                                    f"{layer.name()} / {provider_index} / {axis.upper()}"
+                                )
+                            field_name = QgsAuxiliaryLayer.nameFromProperty(definition, True)
+                            properties.setProperty(prop, QgsProperty.fromField(field_name))
+                        settings.setDataDefinedProperties(properties)
+                        labeling.setSettings(settings, provider_id)
 
             document = QDomDocument()
             document.setContent(xml)
