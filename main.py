@@ -22,7 +22,7 @@ from qgis.PyQt import uic
 import os
 from lxml import etree as ET
 from pathlib import Path
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 from datetime import datetime
 from numbers import Number
 import processing
@@ -78,6 +78,8 @@ class Main(QDockWidget, FORM_CLASS):
         self.exit_bt.clicked.connect(self.hide)
 
         self.xy_table_rows = []
+        self.line_xy_table_rows = []
+        self.total_line_length = 0.0
 
         self.submit_bt.clicked.connect(
             lambda: self.on_submit(test=False)
@@ -126,6 +128,8 @@ class Main(QDockWidget, FORM_CLASS):
 
             self.LayerSet = {}
             self.xy_table_rows = []
+            self.line_xy_table_rows = []
+            self.total_line_length = 0.0
             self.progressBar.setValue(20)
 
             self.htmlValues = {}
@@ -340,7 +344,7 @@ class Main(QDockWidget, FORM_CLASS):
                 "name": values.get("name", ""),
                 "type": values.get("type", ""),
                 "width": values.get("haba", 0.0),
-                "show_width": bool(values.get("show_haba", True)),
+                "has_width": bool(values.get("has_haba", True)),
                 "deduct_area": bool(values.get("is_jochi")),
                 "layer": self.layer_reference(values.get("point_layer")),
                 "filter_expression": values.get("filter_exp", ""),
@@ -368,6 +372,9 @@ class Main(QDockWidget, FORM_CLASS):
             "map": {
                 "coordinate_decimals": self.ketasu.value(),
                 "xy_table_order": self.hyouOrder.currentIndex(),
+                "length_display_decimals": self.lengthDecimals.value(),
+                "area_display_decimals": self.areaDecimals.value(),
+                "hectare_display_decimals": self.haDecimals.value(),
                 "scale": self.scale.scale(),
                 "crs": self.crs.crs().authid(),
                 "show_deduction": self.isJochikeisan.isChecked(),
@@ -521,6 +528,9 @@ class Main(QDockWidget, FORM_CLASS):
         self.hyouOrder.setCurrentIndex(
             xy_table_order if xy_table_order in (0, 1, 2) else 0
         )
+        self.lengthDecimals.setValue(int(map_settings.get("length_display_decimals", 1)))
+        self.areaDecimals.setValue(int(map_settings.get("area_display_decimals", 0)))
+        self.haDecimals.setValue(int(map_settings.get("hectare_display_decimals", 2)))
         scale = map_settings.get("scale")
         if scale not in (None, ""):
             self.scale.setScale(float(scale))
@@ -550,7 +560,6 @@ class Main(QDockWidget, FORM_CLASS):
         missing_layers.extend(self.restore_haisui_pages_from_config(
             lines.get("items", []),
             default_type=map_settings.get("drainage_type", "排水"),
-            default_show_width=map_settings.get("show_drainage_width", True),
         ))
         self.isShui.setChecked(bool(polygons.get("enabled", False)))
         self.isHaisui.setChecked(bool(lines.get("enabled", False)))
@@ -609,7 +618,6 @@ class Main(QDockWidget, FORM_CLASS):
         self,
         items,
         default_type="排水",
-        default_show_width=True,
     ):
         if not isinstance(items, list):
             raise ValueError("ラインの設定形式が正しくありません")
@@ -623,8 +631,10 @@ class Main(QDockWidget, FORM_CLASS):
             page.name_edit.setText(self.clean_html_text(item.get("name")))
             page.type_edit.setText(self.clean_html_text(item.get("type", default_type)))
             page.haba_spin.setValue(float(item.get("width") or 0.0))
-            page.isHaba.setChecked(bool(item.get("show_width", default_show_width)))
-            page.is_jochi.setChecked(bool(item.get("deduct_area", False)))
+            # 旧設定のshow_widthは表示専用だったため、幅の有無には流用しない。
+            has_width = bool(item.get("has_width", True))
+            page.isHaba.setChecked(has_width)
+            page.is_jochi.setChecked(has_width and bool(item.get("deduct_area", False)))
             reference = item.get("layer")
             layer = self.resolve_layer_reference(reference)
             page.point_layer.setLayer(layer)
@@ -931,21 +941,54 @@ class Main(QDockWidget, FORM_CLASS):
                 self.update_xy_tables(root, page.xy_table_rows, f"haisui_{page.index}")
                 self.add_main_map(root, f"haisui_{page.index}")
                 self.add_haisui_length(root, f"haisui_{page.index}", page.length)
-                displayed_haba = values.get("haba") if values.get("show_haba") else None
+                displayed_haba = values.get("haba") if values.get("has_haba") else None
                 self.add_haisui_detail(
                     root,
                     f"haisui_{page.index}",
                     page.length,
                     displayed_haba,
                 )
-                if named_display:
+                if name_text:
                     self.add_map_name(
-                        root, f"haisui_{page.index}", named_display, "haisui"
+                        root, f"haisui_{page.index}", name_text, "haisui"
                     )
-        if self.isShui.isChecked() or self.isHaisui.isChecked():
+
+        if self.isShui.isChecked():
+            self.update_zumen_options(root, "shui_all", "全体（ポリゴン）")
+            self.update_xy_tables(root, self.xy_table_rows, "shui_all")
+            self.add_main_map(root, "shui_all")
+            self.add_shui_detail(
+                root,
+                "shui_all",
+                self.htmlValues["shui_length"],
+                self.htmlValues["area"],
+            )
+
+        if self.isHaisui.isChecked():
+            self.update_zumen_options(root, "haisui_all", "全体（ライン）")
+            self.update_xy_tables(root, self.line_xy_table_rows, "haisui_all")
+            self.add_main_map(root, "haisui_all")
+            self.add_haisui_detail(
+                root,
+                "haisui_all",
+                self.total_line_length,
+                None,
+            )
+            self.add_haisui_length(root, "haisui_all", self.total_line_length)
+
+        if self.isShui.isChecked() and self.isHaisui.isChecked():
             self.update_zumen_options(root, "mix", "全体")
             self.update_xy_tables(root, self.xy_table_rows, "mix")
             self.add_main_map(root, "mix")
+
+        calc_panels = root.xpath("//*[@id='calc']")
+        if calc_panels:
+            if self.isShui.isChecked() and self.isHaisui.isChecked():
+                calc_panels[0].set("data-option-panel", "mix")
+            elif self.isShui.isChecked():
+                calc_panels[0].set("data-option-panel", "shui_all")
+            elif self.isHaisui.isChecked():
+                calc_panels[0].set("data-option-panel", "haisui_all")
 
         self.add_calc_data(
             root,
@@ -1059,9 +1102,14 @@ class Main(QDockWidget, FORM_CLASS):
         left_rows = []
         for line_type, typed_items in line_groups.items():
             total = sum(item["length"] for item in typed_items)
+            total_text = self.format_length(total)
             parts = self.latex_sum_parts(
                 [self.latex_length_term(item) for item in typed_items],
                 self.latex_quantity(total, r"\mathrm{m}", self.format_length),
+                self.displayed_sum_symbol(
+                    [self.format_length(item["length"]) for item in typed_items],
+                    total_text,
+                ),
             )
             left_rows.append((f"{line_type}：", parts))
             self.append_output_log(
@@ -1070,12 +1118,17 @@ class Main(QDockWidget, FORM_CLASS):
             )
 
         if jochi_lines:
+            jochi_length_text = self.format_length(jochi_line_length)
             jochi_length_parts = self.latex_sum_parts(
                 [self.latex_length_term(item) for item in jochi_lines],
                 self.latex_quantity(
                     jochi_line_length,
                     r"\mathrm{m}",
                     self.format_length,
+                ),
+                self.displayed_sum_symbol(
+                    [self.format_length(item["length"]) for item in jochi_lines],
+                    jochi_length_text,
                 ),
             )
             left_rows.append(("除地ライン：", jochi_length_parts))
@@ -1087,6 +1140,7 @@ class Main(QDockWidget, FORM_CLASS):
 
         right_rows = []
         if work_polygons:
+            work_area_text = self.format_area_int(work_area)
             work_area_parts = self.latex_sum_parts(
                 [
                     self.latex_named_quantity(
@@ -1096,6 +1150,10 @@ class Main(QDockWidget, FORM_CLASS):
                 ],
                 self.latex_quantity(
                     work_area, r"\mathrm{m}^{2}", self.format_area_int
+                ),
+                self.displayed_sum_symbol(
+                    [self.format_area_int(item["area"]) for item in work_polygons],
+                    work_area_text,
                 ),
             )
             right_rows.append(("施行地面積：", work_area_parts, ""))
@@ -1110,22 +1168,49 @@ class Main(QDockWidget, FORM_CLASS):
             for item in jochi_polygons
         ] + [self.latex_area_term(item) for item in jochi_lines]
         if exclusion_terms:
+            detailed_exclusion_text = self.format_area_decimal(exclusion_area)
+            displayed_exclusion_text = self.format_area_int(exclusion_area)
+            displayed_exclusion_terms = [
+                self.format_area_int(item["area"]) for item in jochi_polygons
+            ] + [
+                Decimal(self.format_length(item["length"]))
+                * Decimal(self.format_width(item["haba"]))
+                for item in jochi_lines
+            ]
+            detailed_matches_display = (
+                Decimal(detailed_exclusion_text)
+                == Decimal(displayed_exclusion_text)
+            )
+            exclusion_total_formatter = (
+                self.format_area_int
+                if detailed_matches_display
+                else self.format_area_decimal
+            )
             exclusion_area_parts = self.latex_sum_parts(
                 exclusion_terms,
                 self.latex_quantity(
                     exclusion_area,
                     r"\mathrm{m}^{2}",
-                    self.format_area_decimal,
+                    exclusion_total_formatter,
+                ),
+                self.displayed_sum_symbol(
+                    displayed_exclusion_terms,
+                    (
+                        displayed_exclusion_text
+                        if detailed_matches_display
+                        else detailed_exclusion_text
+                    ),
                 ),
             )
-            exclusion_area_parts.extend([
-                ("≃", r"\simeq"),
-                self.latex_quantity(
-                    exclusion_area,
-                    r"\mathrm{m}^{2}",
-                    self.format_area_int,
-                ),
-            ])
+            if not detailed_matches_display:
+                exclusion_area_parts.extend([
+                    ("≃", r"\simeq"),
+                    self.latex_quantity(
+                        exclusion_area,
+                        r"\mathrm{m}^{2}",
+                        self.format_area_int,
+                    ),
+                ])
             exclusion_note = (
                 f"{minimum_exclusion_area_text}m²未満のラインは0m²"
                 if has_below_minimum_area else ""
@@ -1138,6 +1223,17 @@ class Main(QDockWidget, FORM_CLASS):
 
         if work_polygons and exclusion_terms:
             result_area_ha = self.format_area_ha(result_area)
+            displayed_work_area = self.format_area_int(work_area)
+            displayed_exclusion_area = self.format_area_int(exclusion_area)
+            displayed_result_area = self.format_area_int(result_area)
+            result_symbol = self.displayed_equality_symbol(
+                Decimal(displayed_work_area) - Decimal(displayed_exclusion_area),
+                displayed_result_area,
+            )
+            hectare_symbol = self.displayed_equality_symbol(
+                Decimal(displayed_result_area) / Decimal("10000"),
+                result_area_ha,
+            )
             result_area_parts = [
                 self.latex_quantity(
                     work_area, r"\mathrm{m}^{2}", self.format_area_int
@@ -1146,11 +1242,11 @@ class Main(QDockWidget, FORM_CLASS):
                 self.latex_quantity(
                     exclusion_area, r"\mathrm{m}^{2}", self.format_area_int
                 ),
-                ("=", "="),
+                result_symbol,
                 self.latex_quantity(
                     result_area, r"\mathrm{m}^{2}", self.format_area_int
                 ),
-                ("≃", r"\simeq"),
+                hectare_symbol,
                 (
                     f"{result_area_ha}ha",
                     rf"\color{{#d00000}}{{{result_area_ha}\,\mathrm{{ha}}}}",
@@ -1210,16 +1306,36 @@ class Main(QDockWidget, FORM_CLASS):
         self.apply_latex_parts(value_elem, parts)
 
     def format_length(self, value):
-        return f"{float(value or 0):.1f}"
+        return self.format_decimal(value, self.lengthDecimals.value())
 
     def format_area_int(self, value):
-        return str(round(float(value or 0)))
+        return self.format_decimal(value, self.areaDecimals.value())
 
     def format_area_decimal(self, value):
-        return f"{float(value or 0):.1f}"
+        # 近似記号の左側には、指定した表示桁より1桁多く残す。
+        return self.format_decimal(value, self.areaDecimals.value() + 1)
 
     def format_area_ha(self, value):
-        return f"{math.trunc((float(value or 0) / 10000) * 100) / 100:.2f}"
+        decimals = self.haDecimals.value()
+        hectares = Decimal(str(value or 0)) / Decimal("10000")
+        quantum = Decimal(1).scaleb(-decimals)
+        truncated = hectares.quantize(quantum, rounding=ROUND_DOWN)
+        if truncated == 0:
+            truncated = abs(truncated)
+        return f"{truncated:.{decimals}f}"
+
+    def format_decimal(self, value, decimals):
+        decimals = max(0, int(decimals))
+        number = Decimal(str(value or 0))
+        quantum = Decimal(1).scaleb(-decimals)
+        rounded = number.quantize(quantum, rounding=ROUND_HALF_UP)
+        if rounded == 0:
+            rounded = abs(rounded)
+        return f"{rounded:.{decimals}f}"
+
+    def format_width(self, value):
+        # 幅入力は小数第2位まで保持し、不要な末尾の0だけを省く。
+        return self.format_decimal(value, 2).rstrip("0").rstrip(".")
 
     def format_crs_display(self, crs):
         authid = self.clean_html_text(crs.authid()).strip()
@@ -1262,22 +1378,38 @@ class Main(QDockWidget, FORM_CLASS):
     def latex_area_term(self, item):
         name = self.clean_html_text(item["name"]).strip()
         length = self.format_length(item["length"])
-        width = self.format_length(item["haba"])
+        width = self.format_width(item["haba"])
         plain = f"{length}m×{width}m"
         latex = rf"{length}\,\mathrm{{m}}\times{width}\,\mathrm{{m}}"
         if not name:
             return plain, latex
         return f"{name} {plain}", rf"{self.latex_text(name)}\;{latex}"
 
-    def latex_sum_parts(self, terms, total):
+    def displayed_equality_symbol(self, left_value, right_value):
+        left = Decimal(str(left_value))
+        right = Decimal(str(right_value))
+        return ("=", "=") if left == right else ("≃", r"\simeq")
+
+    def displayed_sum_symbol(self, values, total):
+        displayed_sum = sum(
+            (Decimal(str(value)) for value in values),
+            Decimal("0"),
+        )
+        return self.displayed_equality_symbol(displayed_sum, total)
+
+    def latex_sum_parts(self, terms, total, equality_symbol=("=", "=")):
         if not terms:
+            return [total]
+        # 1項だけで丸め後の値が合計と一致する場合は、名前の有無にかかわらず
+        # 「L1 517.8m = 517.8m」のような重複を避けて結果だけを表示する。
+        if len(terms) == 1 and equality_symbol[0] == "=":
             return [total]
         parts = []
         for index, term in enumerate(terms):
             if index:
                 parts.append(("+", "+"))
             parts.append(term)
-        parts.extend([("=", "="), total])
+        parts.extend([equality_symbol, total])
         return parts
 
     def haisui_calc_area(self, item):
@@ -1298,7 +1430,7 @@ class Main(QDockWidget, FORM_CLASS):
 
     def haisui_area_term(self, item):
         name = self.clean_html_text(item["name"])
-        calculation = f"{self.format_length(item['length'])}×{self.format_length(item['haba'])}"
+        calculation = f"{self.format_length(item['length'])}×{self.format_width(item['haba'])}"
         return f"{name} {calculation}" if name else calculation
 
     def replace_children_with_text(self, elem, text):
@@ -1534,7 +1666,7 @@ class Main(QDockWidget, FORM_CLASS):
         dt.text = "延長\xa0"
         dd = ET.SubElement(div, "dd", **{"class": "value"})
         span = ET.SubElement(dd, "span")
-        span.text = "" if length is None else str(length)
+        span.text = "" if length is None else self.format_length(length)
         span.tail = "m"
 
         dl = details[0]
@@ -1555,7 +1687,7 @@ class Main(QDockWidget, FORM_CLASS):
             f"detail_length_{option_panel}",
             option_panel,
             "延長",
-            length,
+            self.format_length(length),
             ".//span[@id='area']/ancestor::div[1]",
         )
         if haba is not None:
@@ -1826,6 +1958,8 @@ class Main(QDockWidget, FORM_CLASS):
     
     def map_make(self, test=False):
         self._editable_projects = EditableProjects(self.output_dir() / "qgz") if not test else None
+        self.line_xy_table_rows = []
+        self.total_line_length = 0.0
         if self.isShui.isChecked():
             total_length = 0.0
             total_area = 0
@@ -1865,8 +1999,12 @@ class Main(QDockWidget, FORM_CLASS):
                         )
                     page.pt_layer.loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "point.qml"))
                     page.line_layer.loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "line.qml"))
-                    page.length = round(sum(f.geometry().length() for f in page.line_layer.getFeatures()), 1)
-                    page.area = int(sum(f.geometry().area() for f in page.area_layer.getFeatures()))
+                    page.length = sum(
+                        f.geometry().length() for f in page.line_layer.getFeatures()
+                    )
+                    page.area = sum(
+                        f.geometry().area() for f in page.area_layer.getFeatures()
+                    )
                     label_expressions = values.get("sokuten_label_expressions", [])
                     primary_label_index = values.get("primary_label_index", 0)
                     self.configure_point_labeling(
@@ -1901,10 +2039,10 @@ class Main(QDockWidget, FORM_CLASS):
                     if not self.export_layout_image(layout, f"shui_{page.index}"):
                         return False
 
-            self.htmlValues['shui_length'] = round(total_length, 1)
-            self.htmlValues['area'] = int(total_area)
+            self.htmlValues['shui_length'] = self.format_length(total_length)
+            self.htmlValues['area'] = self.format_area_int(total_area)
             self.htmlValues['area2'] = self.htmlValues['area']
-            self.htmlValues['area_ha'] = self.format_area_ha(self.htmlValues['area'])
+            self.htmlValues['area_ha'] = self.format_area_ha(total_area)
         
         if self.isHaisui.isChecked():
             for page in self.haisuis:
@@ -1945,12 +2083,16 @@ class Main(QDockWidget, FORM_CLASS):
                         primary_label_index,
                     )
                     page.line_layer.loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "line.qml"))
-                    length = round(sum(f.geometry().length() for f in page.line_layer.getFeatures()), 1)
+                    length = sum(
+                        f.geometry().length() for f in page.line_layer.getFeatures()
+                    )
                     page.length = length
                     page.xy_table_rows = self.point_layer_to_html_rows(
                         page.pt_layer,
                         name_expression=label_expressions[primary_label_index],
                     )
+                    self.line_xy_table_rows.extend(page.xy_table_rows)
+                    self.total_line_length += page.length
                 except Exception as e:
                     QMessageBox.warning(
                         self,
@@ -1968,43 +2110,73 @@ class Main(QDockWidget, FORM_CLASS):
                     if not self.export_layout_image(layout, f"haisui_{page.index}"):
                         return False
 
-        if not test and (self.isShui.isChecked() or self.isHaisui.isChecked()):
+        if not test and self.isShui.isChecked():
+            perimeter_layers = []
+            for page in self.shuis:
+                if page.pt_layer is not None and page.line_layer is not None:
+                    self.configure_mix_line_label(page.line_layer, "", QColor("black"))
+                    perimeter_layers.extend([page.pt_layer, page.line_layer])
+
+            perimeter_label_layer = self.create_mix_perimeter_label_layer(self.shuis)
+            target_layers = (
+                ([perimeter_label_layer] if perimeter_label_layer is not None else [])
+                + perimeter_layers
+            )
+            layout = self.create_layout(target_layers=target_layers)
+            if layout is None:
+                return False
+            if not self.export_layout_image(layout, "shui_all"):
+                return False
+
+        if not test and self.isHaisui.isChecked():
+            line_layers = []
+            for page in self.haisuis:
+                if page.pt_layer is None or page.line_layer is None:
+                    continue
+                values = page.values()
+                page.pt_layer.loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "mix_haisui_point.qml"))
+                self.apply_layer_color(
+                    page.pt_layer,
+                    QColor("black"),
+                )
+                self.configure_point_labeling(
+                    page.pt_layer,
+                    values.get("sokuten_label_expressions", []),
+                    values.get("primary_label_index", 0),
+                )
+                self.configure_mix_line_label(
+                    page.line_layer,
+                    self.clean_html_text(values.get("name")).strip(),
+                    QColor("black"),
+                )
+                line_layers.extend([page.pt_layer, page.line_layer])
+
+            layout = self.create_layout(target_layers=line_layers)
+            if layout is None:
+                return False
+            if not self.export_layout_image(layout, "haisui_all"):
+                return False
+
+        if not test and self.isShui.isChecked() and self.isHaisui.isChecked():
             perimeter_layers = []
             drainage_layers = []
-            perimeter_label_layer = None
-            if self.isShui.isChecked():
-                for page in self.shuis:
-                    if page.pt_layer is not None and page.line_layer is not None:
-                        self.configure_mix_line_label(page.line_layer, "", QColor("black"))
-                        perimeter_layers.extend([page.pt_layer, page.line_layer])
+            for page in self.shuis:
+                if page.pt_layer is not None and page.line_layer is not None:
+                    self.configure_mix_line_label(page.line_layer, "", QColor("black"))
+                    perimeter_layers.extend([page.pt_layer, page.line_layer])
 
-                perimeter_label_layer = self.create_mix_perimeter_label_layer(self.shuis)
+            perimeter_label_layer = self.create_mix_perimeter_label_layer(self.shuis)
 
-            if self.isHaisui.isChecked():
-                for page in self.haisuis:
-                    if page.pt_layer is None or page.line_layer is None:
-                        continue
-                    page.pt_layer.loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "mix_haisui_point.qml"))
-                    line_color = QColor("black") if not self.isShui.isChecked() else None
-                    values = page.values()
-                    line_label = " ".join(
-                        part for part in (
-                            self.clean_html_text(values.get("type")).strip(),
-                            self.clean_html_text(values.get("name")).strip(),
-                        ) if part
-                    )
-                    self.configure_mix_line_label(
-                        page.line_layer,
-                        line_label,
-                        line_color,
-                    )
-                    if not self.isShui.isChecked():
-                        self.apply_layer_color(
-                            page.pt_layer,
-                            QColor("black"),
-                            include_labels=True,
-                        )
-                    drainage_layers.extend([page.pt_layer, page.line_layer])
+            for page in self.haisuis:
+                if page.pt_layer is None or page.line_layer is None:
+                    continue
+                values = page.values()
+                page.pt_layer.loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "mix_haisui_point.qml"))
+                self.configure_mix_line_label(
+                    page.line_layer,
+                    self.clean_html_text(values.get("name")).strip(),
+                )
+                drainage_layers.extend([page.pt_layer, page.line_layer])
 
             # QgsLayoutItemMapは先頭のレイヤーほど手前に描画する。
             # ポリゴン名は最前面に残し、ラインの点・線をポリゴンの点・線より手前にする。
@@ -2651,19 +2823,20 @@ class HaisuiPage(QWidget):
         self.type_edit.setText("排水")
         layout.addRow("種別", self.type_edit)
 
-        # 幅
+        self.isHaba = QCheckBox("あり")
+        self.isHaba.setChecked(True)
+        layout.addRow("幅", self.isHaba)
+
         self.haba_spin = QDoubleSpinBox()
         self.haba_spin.setValue(1.0)
         self.haba_spin.setDecimals(2)
         self.haba_spin.setSuffix(" m")
         layout.addRow("幅（m）", self.haba_spin)
 
-        self.isHaba = QCheckBox("図面に幅を表示")
-        self.isHaba.setChecked(True)
-        layout.addRow("幅の表示", self.isHaba)
-
         self.is_jochi = QCheckBox("除地として扱う")
         layout.addRow("除地", self.is_jochi)
+        self.isHaba.toggled.connect(self.update_width_state)
+        self.update_width_state(self.isHaba.isChecked())
 
         # ポイント指定
         point_group = QGroupBox("ポイント指定")
@@ -2708,12 +2881,13 @@ class HaisuiPage(QWidget):
 
     def values(self):
         label_expressions = self.sokuten_labels.expressions()
+        has_width = self.isHaba.isChecked()
         return {
             "name": self.name_edit.text(),
             "type": self.type_edit.text(),
             "haba": self.haba_spin.value(),
-            "show_haba": self.isHaba.isChecked(),
-            "is_jochi": self.is_jochi.isChecked(),
+            "has_haba": has_width,
+            "is_jochi": has_width and self.is_jochi.isChecked(),
             "point_layer": self.point_layer.currentLayer(),
             "filter_exp": self.filter_exp.expression(),
             "sokuten_label_exp": self.sokuten_labels.primary_expression(),
@@ -2721,3 +2895,9 @@ class HaisuiPage(QWidget):
             "primary_label_index": self.sokuten_labels.primary_index(),
             "sort_exp": self.sort_exp.expression(),
         }
+
+    def update_width_state(self, has_width):
+        self.haba_spin.setEnabled(has_width)
+        self.is_jochi.setEnabled(has_width)
+        if not has_width:
+            self.is_jochi.setChecked(False)

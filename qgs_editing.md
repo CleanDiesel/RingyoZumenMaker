@@ -11,11 +11,11 @@
 
 ## ポリゴン図・ライン図・全体図の画像を置き換える
 
-1. `shui_1.qgz`、`haisui_1.qgz`、`mix.qgz` など、対象のQGZを開きます。
+1. `shui_1.qgz`、`haisui_1.qgz`、`shui_all.qgz`、`haisui_all.qgz`、`mix.qgz` など、対象のQGZを開きます。
 2. 同名のレイアウトを開き、「画像としてエクスポート」を選択します。
 3. PNG形式、解像度 **300 dpi**、ページ全体 **150 × 150 mm** のまま出力します。
    「内容に合わせて切り抜く」は使用しません。画像は約1772 × 1772ピクセルです。
-4. 出力フォルダの `asset/shui_1_map.png`、`asset/haisui_1_map.png`、`asset/mix_map.png` など、対応する画像を上書きします。
+4. 出力フォルダの `asset/shui_1_map.png`、`asset/haisui_1_map.png`、`asset/shui_all_map.png`、`asset/haisui_all_map.png`、`asset/mix_map.png` など、対応する画像を上書きします。
 5. ブラウザで `index.html` を再読み込みして確認します。古い画像が残る場合はCtrl+F5を押します。
 
 登録順の番号ごとに別のQGZを作成します。正確な対応先は、生成した操作説明末尾の一覧を確認してください。
