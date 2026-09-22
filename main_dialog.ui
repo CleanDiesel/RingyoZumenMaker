@@ -331,25 +331,32 @@
             </property>
            </widget>
           </item>
-          <item row="12" column="0">
-           <widget class="QLabel" name="label_27">
-            <property name="text">
-             <string>QGZのバックアップ作成</string>
-            </property>
-           </widget>
-          </item>
-          <item row="12" column="1">
-           <widget class="QCheckBox" name="backupQgz">
-            <property name="text">
-             <string>する</string>
-            </property>
-           </widget>
-          </item>
           <item row="14" column="0">
            <widget class="QLabel" name="qgisLabel">
             <property name="text">
              <string/>
             </property>
+           </widget>
+          </item>
+          <item row="9" column="0">
+           <widget class="QLabel" name="label_14">
+            <property name="text">
+             <string>位置図の向き</string>
+            </property>
+           </widget>
+          </item>
+          <item row="9" column="1">
+           <widget class="QComboBox" name="ichizuDirection">
+            <item>
+             <property name="text">
+              <string>縦</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>横</string>
+             </property>
+            </item>
            </widget>
           </item>
          </layout>
@@ -442,8 +449,8 @@
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>627</width>
-            <height>712</height>
+            <width>103</width>
+            <height>50</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout_10">
@@ -492,8 +499,8 @@
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>627</width>
-            <height>712</height>
+            <width>99</width>
+            <height>134</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout_12">
@@ -514,8 +521,8 @@
                <rect>
                 <x>0</x>
                 <y>0</y>
-                <width>609</width>
-                <height>632</height>
+                <width>300</width>
+                <height>328</height>
                </rect>
               </property>
               <attribute name="label">
@@ -693,6 +700,20 @@
            </property>
            <property name="storageMode">
             <enum>QgsFileWidget::StorageMode::SaveFile</enum>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="0">
+          <widget class="QLabel" name="label_27">
+           <property name="text">
+            <string>生成ファイルのバックアップ</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="1">
+          <widget class="QCheckBox" name="backupQgz">
+           <property name="text">
+            <string>する</string>
            </property>
           </widget>
          </item>

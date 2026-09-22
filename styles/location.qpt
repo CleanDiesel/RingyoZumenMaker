@@ -410,7 +410,7 @@
    </symbol>
   </fillSymbol2>
  </LayoutItem>
- <LayoutItem background="false" blendMode="0" excludeFromExports="0" frame="false" frameJoinStyle="miter" groupUuid="" halign="1" htmlState="0" id="" itemRotation="0" labelText="位置図" marginX="7" marginY="0" opacity="1" outlineWidthM="0.3,mm" position="5,278.934,mm" positionLock="false" positionOnPage="5,278.934,mm" referencePoint="0" size="23.0795,5.17189,mm" templateUuid="{29b43140-c308-457b-b8df-1f3fc47ff233}" type="65641" uuid="{29b43140-c308-457b-b8df-1f3fc47ff233}" valign="128" visibility="1" zValue="7">
+ <LayoutItem background="false" blendMode="0" excludeFromExports="0" frame="false" frameJoinStyle="miter" groupUuid="" halign="1" htmlState="0" id="位置図見出し" itemRotation="0" labelText="位置図" marginX="7" marginY="0" opacity="1" outlineWidthM="0.3,mm" position="5,278.934,mm" positionLock="false" positionOnPage="5,278.934,mm" referencePoint="0" size="23.0795,5.17189,mm" templateUuid="{29b43140-c308-457b-b8df-1f3fc47ff233}" type="65641" uuid="{29b43140-c308-457b-b8df-1f3fc47ff233}" valign="128" visibility="1" zValue="7">
   <FrameColor alpha="255" blue="0" green="0" red="0"/>
   <BackgroundColor alpha="255" blue="255" green="255" red="255"/>
   <LayoutObject>
@@ -940,7 +940,7 @@
    </dd_properties>
   </text-style>
  </LayoutItem>
- <LayoutItem background="false" blendMode="0" cornerRadiusMeasure="0,mm" excludeFromExports="0" frame="false" frameJoinStyle="miter" groupUuid="" id="" itemRotation="0" opacity="1" outlineWidthM="0.3,mm" position="204.91,291.91,mm" positionLock="false" positionOnPage="204.91,291.91,mm" referencePoint="8" shapeType="1" size="199.82,13.7288,mm" templateUuid="{be792508-278a-47be-ab2e-15e7afe00746}" type="65643" uuid="{be792508-278a-47be-ab2e-15e7afe00746}" visibility="1" zValue="4">
+ <LayoutItem background="false" blendMode="0" cornerRadiusMeasure="0,mm" excludeFromExports="0" frame="false" frameJoinStyle="miter" groupUuid="" id="帯背景" itemRotation="0" opacity="1" outlineWidthM="0.3,mm" position="204.91,291.91,mm" positionLock="false" positionOnPage="204.91,291.91,mm" referencePoint="8" shapeType="1" size="199.82,13.7288,mm" templateUuid="{be792508-278a-47be-ab2e-15e7afe00746}" type="65643" uuid="{be792508-278a-47be-ab2e-15e7afe00746}" visibility="1" zValue="4">
   <FrameColor alpha="255" blue="0" green="0" red="0"/>
   <BackgroundColor alpha="255" blue="255" green="255" red="255"/>
   <LayoutObject>

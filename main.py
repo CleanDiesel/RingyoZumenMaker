@@ -37,6 +37,8 @@ from .editable_projects import EditableProjects
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), "main_dialog.ui"))
 
+OUTPUT_MANIFEST_NAME = ".ringyo_zumen_outputs.json"
+
 
 class Main(QDockWidget, FORM_CLASS):
     def __init__(self, parent=None, iface=None):
@@ -157,15 +159,21 @@ class Main(QDockWidget, FORM_CLASS):
                 self.progressBar.setValue(0)
                 return
 
+            # 出力フォルダへ自動生成する設定ファイルも、他の生成物と
+            # 同じトランザクションとバックアップ対象に含める。
+            if self.isSaveConfig.currentIndex() == 1 and not self.save_config_file():
+                self.progressBar.setValue(0)
+                return
+
             if not self.commit_staged_output(
                 staging_dir,
                 final_output_dir,
-                backup_qgz=self.backupQgz.isChecked(),
+                backup_generated=self.backupQgz.isChecked(),
             ):
                 self.progressBar.setValue(0)
                 return
 
-            if not self.save_config_file():
+            if self.isSaveConfig.currentIndex() != 1 and not self.save_config_file():
                 self.progressBar.setValue(0)
                 return
 
@@ -202,30 +210,68 @@ class Main(QDockWidget, FORM_CLASS):
             return path
         return Path(self._final_output_dir) / relative_path
 
-    def commit_staged_output(self, staging_dir, final_output_dir, backup_qgz=False):
+    def commit_staged_output(
+        self,
+        staging_dir,
+        final_output_dir,
+        backup_generated=False,
+    ):
         staging_dir = Path(staging_dir)
         final_output_dir = Path(final_output_dir)
-        backup_dir = staging_dir / ".backup"
-        current_qgz_dir = final_output_dir / "qgz"
-        qgz_backup_dir = None
+        rollback_dir = staging_dir / ".rollback"
         staged_files = [
             path
             for path in staging_dir.rglob("*")
-            if path.is_file() and backup_dir not in path.parents
+            if path.is_file() and rollback_dir not in path.parents
         ]
+        current_paths = {
+            path.relative_to(staging_dir)
+            for path in staged_files
+            if path.name != OUTPUT_MANIFEST_NAME
+        }
+        previous_paths = self.previous_generated_output_paths(final_output_dir)
+        previous_existing_paths = {
+            path for path in previous_paths
+            if self.safe_generated_output_file(final_output_dir, path) is not None
+        }
+
+        manifest_paths = (
+            current_paths
+            if backup_generated
+            else current_paths | previous_existing_paths
+        )
+        manifest_source = staging_dir / OUTPUT_MANIFEST_NAME
+        self.write_output_manifest(manifest_source, manifest_paths)
+        staged_files.append(manifest_source)
+
+        backup_batch_dir = None
+        backed_up = []
         committed = []
 
         try:
-            if backup_qgz and current_qgz_dir.is_dir():
-                created_at = datetime.fromtimestamp(
-                    current_qgz_dir.stat().st_ctime
-                ).strftime("%Y%m%d-%H%M%S")
-                qgz_backup_dir = final_output_dir / f"qgz-{created_at}"
+            if backup_generated and previous_existing_paths:
+                backup_root = final_output_dir / "backup"
+                created_at = datetime.now().strftime("%Y%m%d-%H%M%S")
+                backup_batch_dir = backup_root / created_at
                 suffix = 2
-                while qgz_backup_dir.exists():
-                    qgz_backup_dir = final_output_dir / f"qgz-{created_at}-{suffix}"
+                while backup_batch_dir.exists():
+                    backup_batch_dir = backup_root / f"{created_at}-{suffix}"
                     suffix += 1
-                os.replace(current_qgz_dir, qgz_backup_dir)
+
+                for relative_path in sorted(
+                    previous_existing_paths,
+                    key=lambda path: path.as_posix(),
+                ):
+                    source_path = self.safe_generated_output_file(
+                        final_output_dir,
+                        relative_path,
+                    )
+                    if source_path is None:
+                        continue
+                    backup_path = backup_batch_dir / relative_path
+                    backup_path.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(source_path, backup_path)
+                    backed_up.append((source_path, backup_path))
 
             for source_path in staged_files:
                 relative_path = source_path.relative_to(staging_dir)
@@ -234,7 +280,7 @@ class Main(QDockWidget, FORM_CLASS):
 
                 backup_path = None
                 if target_path.exists():
-                    backup_path = backup_dir / relative_path
+                    backup_path = rollback_dir / relative_path
                     backup_path.parent.mkdir(parents=True, exist_ok=True)
                     os.replace(target_path, backup_path)
 
@@ -259,19 +305,16 @@ class Main(QDockWidget, FORM_CLASS):
                 except OSError:
                     pass
 
-            if qgz_backup_dir is not None and qgz_backup_dir.exists():
+            for source_path, backup_path in reversed(backed_up):
                 try:
-                    if current_qgz_dir.exists():
-                        resolved_qgz = current_qgz_dir.resolve()
-                        if (
-                            resolved_qgz.parent != final_output_dir.resolve()
-                            or resolved_qgz.name != "qgz"
-                        ):
-                            raise OSError(f"復旧対象外のフォルダです: {resolved_qgz}")
-                        shutil.rmtree(resolved_qgz)
-                    os.replace(qgz_backup_dir, current_qgz_dir)
+                    if backup_path.exists():
+                        source_path.parent.mkdir(parents=True, exist_ok=True)
+                        os.replace(backup_path, source_path)
                 except OSError:
                     pass
+
+            if backup_batch_dir is not None and backup_batch_dir.exists():
+                shutil.rmtree(backup_batch_dir, ignore_errors=True)
 
             QMessageBox.warning(
                 self,
@@ -280,7 +323,156 @@ class Main(QDockWidget, FORM_CLASS):
             )
             return False
 
+        if backup_batch_dir is not None:
+            self.remove_empty_generated_directories(
+                final_output_dir,
+                previous_existing_paths,
+            )
+            self.append_output_log(
+                f"以前の生成ファイルをバックアップしました: {backup_batch_dir}"
+            )
+
         return True
+
+    def previous_generated_output_paths(self, output_dir):
+        output_dir = Path(output_dir)
+        manifest_path = output_dir / OUTPUT_MANIFEST_NAME
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as manifest_file:
+                data = json.load(manifest_file)
+            if (
+                isinstance(data, dict)
+                and data.get("format") == "RingyoZumenMaker.outputs"
+                and isinstance(data.get("paths"), list)
+            ):
+                return {
+                    normalized
+                    for value in data["paths"]
+                    if (normalized := self.normalized_generated_output_path(value))
+                    is not None
+                }
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            pass
+
+        return self.legacy_generated_output_paths(output_dir)
+
+    def legacy_generated_output_paths(self, output_dir):
+        output_dir = Path(output_dir)
+        paths = set()
+
+        def add_if_file(relative_path):
+            relative_path = Path(relative_path)
+            if self.safe_generated_output_file(output_dir, relative_path) is not None:
+                paths.add(relative_path)
+
+        add_if_file("index.html")
+        add_if_file("input.config")
+
+        for pdf_path in output_dir.glob("* - 位置図.pdf"):
+            add_if_file(pdf_path.relative_to(output_dir))
+
+        asset_source = Path(__file__).parent / "html_shinsoku" / "asset"
+        for source_path in asset_source.rglob("*"):
+            if source_path.is_file():
+                add_if_file(Path("asset") / source_path.relative_to(asset_source))
+
+        asset_dir = output_dir / "asset"
+        map_pattern = re.compile(
+            r"(?:shui_\d+|haisui_\d+|shui_all|haisui_all|mix)_map\.png"
+        )
+        if asset_dir.is_dir():
+            for map_path in asset_dir.glob("*_map.png"):
+                if map_pattern.fullmatch(map_path.name):
+                    add_if_file(map_path.relative_to(output_dir))
+
+        qgz_dir = output_dir / "qgz"
+        qgz_pattern = re.compile(
+            r"(?:shui_\d+|haisui_\d+|shui_all|haisui_all|mix|location)\.qgz"
+        )
+        for name in ("ringyo_zumen.gpkg", "houi2.svg", "操作説明.md"):
+            add_if_file(Path("qgz") / name)
+        if qgz_dir.is_dir():
+            for qgz_path in qgz_dir.glob("*.qgz"):
+                if qgz_pattern.fullmatch(qgz_path.name):
+                    add_if_file(qgz_path.relative_to(output_dir))
+
+        return paths
+
+    @staticmethod
+    def normalized_generated_output_path(value):
+        if not isinstance(value, str) or not value.strip():
+            return None
+        path = Path(value)
+        if (
+            path.is_absolute()
+            or path.drive
+            or ".." in path.parts
+            or path.name == OUTPUT_MANIFEST_NAME
+            or (path.parts and path.parts[0].casefold() == "backup")
+        ):
+            return None
+        return path
+
+    def safe_generated_output_file(self, output_dir, relative_path):
+        relative_path = self.normalized_generated_output_path(
+            Path(relative_path).as_posix()
+        )
+        if relative_path is None:
+            return None
+
+        output_dir = Path(output_dir).resolve()
+        target_path = output_dir / relative_path
+        try:
+            if (
+                target_path.is_symlink()
+                or not target_path.is_file()
+                or not target_path.resolve().is_relative_to(output_dir)
+            ):
+                return None
+        except (OSError, RuntimeError):
+            return None
+        return target_path
+
+    @staticmethod
+    def write_output_manifest(path, generated_paths):
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "format": "RingyoZumenMaker.outputs",
+            "version": 1,
+            "paths": sorted(
+                Path(relative_path).as_posix()
+                for relative_path in generated_paths
+            ),
+        }
+        file_descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            dir=str(path.parent),
+        )
+        try:
+            with os.fdopen(file_descriptor, "w", encoding="utf-8") as manifest_file:
+                json.dump(data, manifest_file, ensure_ascii=False, indent=2)
+                manifest_file.write("\n")
+            os.replace(temporary_name, path)
+        finally:
+            if os.path.exists(temporary_name):
+                os.unlink(temporary_name)
+
+    @staticmethod
+    def remove_empty_generated_directories(output_dir, relative_paths):
+        output_dir = Path(output_dir).resolve()
+        candidates = {
+            parent
+            for relative_path in relative_paths
+            for parent in (output_dir / relative_path).parents
+            if parent != output_dir and output_dir in parent.parents
+        }
+        for directory in sorted(candidates, key=lambda path: len(path.parts), reverse=True):
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
 
     def open_output_tab(self):
         self.tabWidget.setCurrentWidget(self.tab_5)
@@ -380,6 +572,7 @@ class Main(QDockWidget, FORM_CLASS):
                 "show_deduction": self.isJochikeisan.isChecked(),
                 "minimum_exclusion_area_a": self.minEx.value(),
                 "create_location_map": self.isIchizu.isChecked(),
+                "location_direction": self.ichizuDirection.currentIndex(),
             },
             "output": {
                 "directory": self.fileName.filePath(),
@@ -405,7 +598,7 @@ class Main(QDockWidget, FORM_CLASS):
         if mode == 0:
             return None
         if mode == 1:
-            return Path(self.fileName.filePath()) / "input.config"
+            return self.output_dir() / "input.config"
 
         raw_path = self.saveConfig.filePath().strip()
         if not raw_path:
@@ -447,8 +640,26 @@ class Main(QDockWidget, FORM_CLASS):
             QMessageBox.warning(self, "エラー", f"設定ファイルを保存できません:\n{path}\n{e}")
             return False
 
-        self.append_output_log(f"設定ファイルを書き込みました: {path}")
+        displayed_path = self.displayed_output_path(path)
+        self.append_output_log(f"設定ファイルを書き込みました: {displayed_path}")
+        if self.isSaveConfig.currentIndex() == 2:
+            self.register_generated_output_path(path)
         return True
+
+    def register_generated_output_path(self, path):
+        final_output_dir = Path(self.fileName.filePath()).resolve()
+        try:
+            relative_path = Path(path).resolve().relative_to(final_output_dir)
+        except (OSError, ValueError):
+            return
+
+        normalized = self.normalized_generated_output_path(relative_path.as_posix())
+        if normalized is None:
+            return
+        manifest_path = final_output_dir / OUTPUT_MANIFEST_NAME
+        generated_paths = self.previous_generated_output_paths(final_output_dir)
+        generated_paths.add(normalized)
+        self.write_output_manifest(manifest_path, generated_paths)
 
     def load_config_dialog(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -545,6 +756,13 @@ class Main(QDockWidget, FORM_CLASS):
         if minimum_exclusion_area not in (None, ""):
             self.minEx.setValue(float(minimum_exclusion_area))
         self.isIchizu.setChecked(bool(map_settings.get("create_location_map", False)))
+        try:
+            location_direction = int(map_settings.get("location_direction", 0) or 0)
+        except (TypeError, ValueError):
+            location_direction = 0
+        self.ichizuDirection.setCurrentIndex(
+            location_direction if location_direction in (0, 1) else 0
+        )
         self.fileName.setFilePath(self.clean_html_text(output.get("directory")))
         self.backupQgz.setChecked(bool(output.get("backup_qgz", False)))
         self.saveConfig.setFilePath(self.clean_html_text(output.get("config_file")))
@@ -2312,6 +2530,17 @@ class Main(QDockWidget, FORM_CLASS):
             )
             return None
 
+        if self.ichizuDirection.currentIndex() == 1:
+            try:
+                template_xml = self.landscape_location_template_xml(template_xml)
+            except (ET.XMLSyntaxError, ValueError) as e:
+                QMessageBox.warning(
+                    self,
+                    "エラー",
+                    f"横向き位置図テンプレートを作成できません:\n{e}"
+                )
+                return None
+
         doc = QDomDocument()
         content_result = doc.setContent(template_xml)
         content_ok = content_result[0] if isinstance(content_result, tuple) else content_result
@@ -2326,8 +2555,60 @@ class Main(QDockWidget, FORM_CLASS):
         layout = QgsPrintLayout(QgsProject.instance())
         layout.initializeDefaults()
         layout.loadFromTemplate(doc, QgsReadWriteContext())
+        if self.ichizuDirection.currentIndex() == 1:
+            map_item = layout.itemById("地図 1")
+            if not isinstance(map_item, QgsLayoutItemMap):
+                QMessageBox.warning(
+                    self,
+                    "エラー",
+                    "位置図テンプレートに地図枠がありません"
+                )
+                return None
+            # 地図項目はテンプレート読込時に既存範囲の縦横比へサイズを
+            # 自動補正するため、読込後にA4横の枠へ確定させる。
+            map_item.attemptResize(
+                QgsLayoutSize(287, 200, QgsUnitTypes.LayoutMillimeters)
+            )
+            map_item.attemptMove(
+                QgsLayoutPoint(148.5, 105, QgsUnitTypes.LayoutMillimeters),
+                True,
+            )
         layout.setName("RingyoZumenMaker temporary location map")
         return layout
+
+    def landscape_location_template_xml(self, template_xml):
+        root = ET.fromstring(template_xml.encode("utf-8"))
+
+        page_items = root.xpath("./PageCollection/LayoutItem[@type='65638']")
+        if len(page_items) != 1:
+            raise ValueError("位置図テンプレートの用紙が1枚ではありません")
+        page_items[0].set("size", "297,210,mm")
+
+        item_geometry = {
+            # 地図枠は、縦向きの上下左右5mmの余白を横向きでも維持する。
+            "地図 1": ("148.5,105,mm", "287,200,mm"),
+            # 方位記号は右上へ移動する。
+            "方位記号": ("261.863,9.67,mm", None),
+            # 帯を構成する5要素は相対位置を保ったまま右下へ移動する。
+            "縮尺": ("257.175,191.934,mm", None),
+            "位置図見出し": ("92,191.934,mm", None),
+            "スケールバー": ("289,200.068,mm", None),
+            "位置図タイトル": ("169.7596,200.632,mm", None),
+            "帯背景": ("291.91,204.91,mm", None),
+        }
+        for item_id, (position, size) in item_geometry.items():
+            items = root.xpath(f"./LayoutItem[@id='{item_id}']")
+            if len(items) != 1:
+                raise ValueError(
+                    f"位置図テンプレートの「{item_id}」が1つではありません"
+                )
+            item = items[0]
+            item.set("position", position)
+            item.set("positionOnPage", position)
+            if size is not None:
+                item.set("size", size)
+
+        return ET.tostring(root, encoding="unicode")
 
     def set_location_picture_paths(self, layout, style_dir):
         north_arrow = layout.itemById("方位記号")
