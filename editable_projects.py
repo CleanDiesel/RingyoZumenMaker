@@ -27,8 +27,7 @@ class EditableProjects:
             layer.id() for layer in persistent_layers if layer is not None
         }
 
-        # The combined drawing has a generated polygon for perimeter-label
-        # placement. Restore the previous behavior and persist that polygon.
+        # Application drawings persist generated vectors, not raster backgrounds.
         if name != "location":
             for item in layout.items():
                 if isinstance(item, QgsLayoutItemMap):
@@ -42,18 +41,16 @@ class EditableProjects:
         layers = {}
         for item in layout.items():
             if isinstance(item, QgsLayoutItemMap):
-                kept_layers = (
-                    list(item.layers())
-                    if name == "location"
-                    else [
-                        layer for layer in item.layers()
-                        if layer.id() in self.persistent_layer_ids
-                    ]
-                )
+                kept_layers = list(item.layers())
                 item.setLayers(kept_layers)
                 for layer in kept_layers:
                     if layer.id() not in layers:
                         layers[layer.id()] = layer.clone()
+
+        # 除去前・採用除地のような非表示の成果レイヤもGeoPackageへ保存する。
+        for layer in persistent_layers:
+            if layer is not None and layer.id() not in layers:
+                layers[layer.id()] = layer.clone()
 
         document = QDomDocument()
         document.appendChild(layout.writeXml(document, QgsReadWriteContext()))

@@ -8,26 +8,8 @@
 </head>
 <body>
   <div id="main_container">
-    <h1>実測図</h1>
-    <div id="zumen_select" class="print_hide">
-      <select id="zumen_type">
-        <option value="">図面を選択</option>
-      </select>
-    </div>
+    <h1>申請区域図</h1>
     <div id="info_container">
-      <div id="jissokudate">
-        <div class="description">実測年月日</div>
-        <div class="value" id="sokuryobi"></div>
-      </div>
-      <div id="jissokusya">
-        <div class="description">実測者氏名</div>
-        <div class="value">
-          <div class="value1" id="sokuryojigyosha">
-          </div>
-          <div class="value2" id="sokuryosha">
-          </div>
-        </div>
-      </div>
       <div id="seizudate">
         <div class="description">製図年月日</div>
         <div class="value" id="seizubi"></div>
@@ -47,71 +29,39 @@
           </div>
           <div class="value2" id="rinshohan">
           </div>
-          <!-- <div class="value3" id="haisui_name">
-          </div> -->
         </div>
+      </div>
+      <div id="shinseibango">
+        <div class="description">申請番号</div>
+        <div class="value" id="shinseino"></div>
       </div>
     </div>
     <div id="sub_container">
       <div id="xy_container">
         <dl id="detail">
-          <div data-option-panel="mix">
-            <dt class="description">外周全長</dt>
-            <dd class="value"><span id="shui_length"></span>m</dd>
-          </div>
-          <!-- <div>
-            <dt class="description">延長</dt>
-            <dd class="value"><span></span>m</dd>
-          </div> -->
-          <div data-option-panel="mix">
-            <dt class="description">面積</dt>
-            <dd class="value"><span id="area"></span>m<sup>2</sup></dd>
-          </div>
-          <!-- <div>
-            <dt class="description">幅</dt>
-            <dd class="value"><span></span>m</dd>
-          </div> -->
           <div id="crs_detail">
             <dt class="description">測地系&nbsp;</dt>
             <dd class="value" id="crs"></dd>
           </div>
+          <div id="scale_">
+              <dt class="description">縮尺&nbsp;</dt>
+            <dd class="value" id="scale"></dd>
+          </div>
         </dl>
-        <div id="xy_updown" class="print_hide" hidden>
-          <button type="button" id="xy_prev">▲</button>
-          <button type="button" id="xy_next">▼</button>
-        </div>
+        <div id="calc"><div id="calc_area"></div></div>
       </div>
       <div id="map_container" data-map-visible="1">
         <label id="map_visibility_control" class="print_hide" title="地図欄の表示を切り替える">
           <input type="checkbox" id="map_visibility_toggle" checked>
           <span>地図を表示</span>
         </label>
-        <div id="map_detail">
-          <dl>
-            <div id="area2_" data-option-panel="mix">
-              <dt class="description">面積&nbsp;</dt>
-              <dd class="value"><span id="area2"></span>m<sup>2</sup></dd>
-            </div>
-            <!-- <div>
-              <dt class="description">延長&nbsp;</dt>
-              <dd class="value">
-                m</dd>
-            </div> -->
-            <div id="scale_">
-                <dt class="description">縮尺&nbsp;</dt>
-              <dd class="value" id="scale"></dd>
-            </div>
-          </dl>
+        <div id="map_legend">
+          <span class="red-circle"></span>
+          <span class="red-circle-description">&nbsp;基準点</span>
         </div>
         <div id="map">
           <img src="asset/houi.svg" alt="" id="houi">
-          <!-- <img src="asset/shui_map.png" alt="" class="main_map" data-option-panel="shui"> -->
-          <!-- <img src="asset/haisui_map.png" alt="" class="main_map" data-option-panel="haisui"> -->
-          <!-- <img src="asset/mix_map.png" alt="" class="main_map" data-option-panel="mix"> -->
-        </div>
-        <div id="calc" data-option-panel="mix">
-          <div id="calc_distance"></div>
-          <div id="calc_area"></div>
+          <img src="asset/map.png" alt="" class="main_map">
         </div>
       </div>
     </div>
@@ -130,158 +80,13 @@
         });
       });
 
-      const select = document.getElementById("zumen_type");
-      const panels = document.querySelectorAll("[data-option-panel]");
-      const xyUpdown = document.getElementById("xy_updown");
-      const xyPrev = document.getElementById("xy_prev");
-      const xyNext = document.getElementById("xy_next");
-      const xyTables = Array.from(document.querySelectorAll("[data-xy-table]"));
       const mapContainer = document.getElementById("map_container");
-      const mapVisibilityToggle = document.getElementById("map_visibility_toggle");
-      const calc = document.getElementById("calc");
-      const baseTitle = document.title;
-      let currentXyIndex = 0;
-
-      if (!select) {
-        return;
+      const toggle = document.getElementById("map_visibility_toggle");
+      if (mapContainer && toggle) {
+        const update = () => { mapContainer.dataset.mapVisible = toggle.checked ? "1" : "0"; };
+        toggle.addEventListener("change", update);
+        update();
       }
-
-      const panelValues = (panel) => (
-        panel.dataset.optionPanel || ""
-      ).split(/\s+/).filter(Boolean);
-
-      const updateMapVisibility = () => {
-        if (!mapContainer || !mapVisibilityToggle) {
-          return;
-        }
-        mapContainer.dataset.mapVisible = mapVisibilityToggle.checked ? "1" : "0";
-      };
-
-      const syncMapVisibilityWithXyTable = (hasActiveXyTable) => {
-        if (!mapVisibilityToggle) {
-          return;
-        }
-        mapVisibilityToggle.checked = hasActiveXyTable && currentXyIndex === 0;
-        updateMapVisibility();
-      };
-
-      const updatePanels = () => {
-        const selectedValue = select.value;
-        const optionValues = new Set(
-          Array.from(select.options).map((option) => option.value)
-        );
-
-        panels.forEach((panel) => {
-          if (panel.id === "calc" && panel.dataset.isJochiKeisan !== "1") {
-            panel.hidden = true;
-            return;
-          }
-          const values = panelValues(panel);
-          const hasOption = values.some((value) => optionValues.has(value));
-          panel.hidden = !hasOption || !values.includes(selectedValue);
-        });
-      };
-
-      const updateXyTables = () => {
-        const selectedValue = select.value;
-        const activeXyTables = xyTables.filter((table) => (
-          panelValues(table).includes(selectedValue)
-        ));
-
-        if (activeXyTables.length === 0) {
-          if (xyUpdown) {
-            xyUpdown.hidden = true;
-          }
-          xyTables.forEach((table) => {
-            table.hidden = true;
-          });
-          syncMapVisibilityWithXyTable(false);
-          return;
-        }
-
-        if (currentXyIndex >= activeXyTables.length) {
-          currentXyIndex = 0;
-        }
-
-        xyTables.forEach((table, index) => {
-          table.hidden = true;
-        });
-
-        activeXyTables.forEach((table, index) => {
-          table.hidden = index !== currentXyIndex;
-        });
-
-        if (xyUpdown) {
-          xyUpdown.hidden = activeXyTables.length <= 1;
-        }
-        syncMapVisibilityWithXyTable(true);
-      };
-
-      const updateTitle = () => {
-        const selectedOption = select.options[select.selectedIndex];
-        if (!selectedOption || !select.value) {
-          document.title = baseTitle;
-          return;
-        }
-
-        document.title = `${baseTitle.replace(/\s*-\s*実測図\s*$/, "")} - ${selectedOption.textContent.trim()} - 実測図`;
-      };
-
-      if (xyPrev) {
-        xyPrev.addEventListener("click", () => {
-          const activeXyTables = xyTables.filter((table) => (
-            panelValues(table).includes(select.value)
-          ));
-
-          if (activeXyTables.length === 0) {
-            return;
-          }
-
-          currentXyIndex = (currentXyIndex - 1 + activeXyTables.length) % activeXyTables.length;
-          updateXyTables();
-        });
-      }
-
-      if (xyNext) {
-        xyNext.addEventListener("click", () => {
-          const activeXyTables = xyTables.filter((table) => (
-            panelValues(table).includes(select.value)
-          ));
-
-          if (activeXyTables.length === 0) {
-            return;
-          }
-
-          currentXyIndex = (currentXyIndex + 1) % activeXyTables.length;
-          updateXyTables();
-        });
-      }
-
-      if (mapVisibilityToggle) {
-        mapVisibilityToggle.addEventListener("change", updateMapVisibility);
-      }
-
-      select.addEventListener("change", () => {
-        currentXyIndex = 0;
-        updatePanels();
-        updateXyTables();
-        updateTitle();
-      });
-
-      const renderCalc = () => {
-        if (!calc) {
-          return;
-        }
-
-        if (calc.dataset.isJochiKeisan !== "1") {
-          calc.hidden = true;
-        }
-      };
-
-      updatePanels();
-      renderCalc();
-      updateXyTables();
-      updateTitle();
     })();
   </script>
 </body>
