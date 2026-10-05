@@ -25,25 +25,35 @@ h1 { text-align: center; font: 7mm 'Yu Mincho', serif; padding-top: calc(15mm * 
 }
 #xy_container {
   width: calc(71mm * var(--paper-factor)); flex: none;
-  border: .7mm solid black; padding: calc(2mm * var(--paper-factor));
-  display: flex; flex-direction: column; gap: 5mm; min-width: 0;
+  border: .7mm solid black; padding: calc(5mm * var(--paper-factor)) calc(4mm * var(--paper-factor));
+  font-family: 'Yu Mincho', 'Times New Roman', serif;
+  display: flex; flex-direction: column; gap: 7mm; min-width: 0;
+  line-height: 1.6;
 }
 #detail { display: flex; flex-direction: column; gap: 2mm; }
 #detail > div { display: flex; justify-content: space-between; gap: 2mm; }
 #detail dt { flex: none; }
 #detail dd { text-align: right; min-width: 0; overflow-wrap: anywhere; }
 #crs { font-size: 2.6mm; }
+#scale { font-size: 4.2mm; }
 #calc { min-width: 0; }
+.calc-heading { font-size: 2.9mm; letter-spacing: .12em; color: #596154; padding-bottom: 2mm; border-bottom: .25mm solid #242822; margin-bottom: 4mm; }
 #calc_area { display: flex; flex-direction: column; gap: 4mm; }
 .calc-row { min-width: 0; }
-.calc-label { margin-bottom: 1mm; }
+.calc-label { font-size: 3.2mm; margin-bottom: 2mm; }
+.calc-application { border-top: .25mm solid #b9beb5; padding-top: 5mm; }
 .calc-formula { min-width: 0; overflow-wrap: anywhere; }
+.calc-deduction { display: flex; flex-direction: column; gap: 2mm; }
+.deduction-term { min-width: 0; }
+.deduction-term:last-child:not(:first-child) { padding-top: 1mm; }
 .latex-flow { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: baseline; gap: .15em .35em; }
 .latex-part { flex: 0 0 auto; max-width: 100%; overflow-wrap: anywhere; }
 .katex { font-size: 1em; }
 .katex .katex-base { width: max-content; max-width: 100%; }
 .katex .mord.text { white-space: normal; overflow-wrap: anywhere; }
-.calc-result { color: red; }
+#xy_container .katex .mord.text { font-family: 'Yu Mincho', 'Times New Roman', serif; }
+.calc-result { color: red; display: flex; justify-content: flex-end; align-items: baseline; gap: .35em; margin-top: 3mm; font-size: 4.8mm; }
+.calc-result-caption { text-align: right; font-size: 3.2mm; color: #596154; margin-top: 1mm; }
 #map_container {
   position: relative; width: calc(160mm * var(--paper-factor)); flex: none;
   min-height: calc(158mm * var(--paper-factor)); border: .7mm solid black;

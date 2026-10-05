@@ -91,6 +91,7 @@ for name, expression in (("shichoson", "'テスト町'"), ("rinpan", "12"), ("sh
 widget.hukuin.setValue(2)
 widget.minJochi.setValue(1)
 widget.scale.setScale(2000)
+widget.locationScale.setScale(10000)
 widget.rinshohan.setText("12-60林班")
 widget.shinseibango.setText("123-01")
 widget.seizusha.setText("製図者")
@@ -172,8 +173,11 @@ saved.clear()
 print("trial, shapefile hectares, GPKG layers, QGZ ortho: OK")
 
 data = widget.configuration_data()
+assert data["map"]["location_scale"] == 10000
+widget.locationScale.setScale(5000)
 widget.polygon.setLayer(None)
 widget.apply_configuration(data)
+assert widget.locationScale.scale() == 10000
 assert widget.polygon.currentLayer() == polygons
 assert widget.polygonName.expression() == '"name"'
 assert widget.kijunten.currentLayer() == reference_points
@@ -194,7 +198,7 @@ for direction in (0, 1):
     layout = project.layoutManager().layouts()[0]
     page = layout.pageCollection().page(0).pageSize()
     assert (page.width(), page.height()) == ((297, 420) if direction == 0 else (420, 297))
-    assert abs(layout.itemById("地図 1").scale() - 2000) < 0.01
+    assert abs(layout.itemById("地図 1").scale() - 10000) < 0.01
     print("A3", direction, "location page/scale", page.width(), page.height())
     project.clear()
 
@@ -303,12 +307,22 @@ widget.kijuntenExp.setExpression("")
 widget.calculate_reference_points()
 assert widget.reference_layer.featureCount() == 2
 widget.kijunten.setLayer(None)
-try:
-    widget.calculate_reference_points()
-except ValueError as error:
-    assert "ポイントレイヤ" in str(error)
-else:
-    raise AssertionError("missing reference layer was not rejected")
+widget.olso.setLayer(None)
+widget.calculate_reference_points()
+assert widget.reference_layer is None
+assert widget.reference_distance is None
+optional_output = output_root / "without_optional_layers"
+optional_output.mkdir()
+widget.fileName.setFilePath(str(optional_output))
+widget.on_submit(test=False)
+assert widget.progressBar.value() == 100, messages
+assert None not in widget.result_layers
+assert all(layer.name() != "基準点" for layer in widget.result_layers)
+assert (optional_output / "asset/map.png").is_file()
+assert (optional_output / "qgz/application.qgz").is_file()
+assert (optional_output / "qgz/location.qgz").is_file()
+assert 'id="map_legend"' not in (optional_output / "index.html").read_text(encoding="utf-8")
+print("exports without reference points or orthophoto, reference legend omitted: OK")
 print("reference filter, count, distance, empty expression and errors: OK")
 widget.close()
 print("QA_OUTPUT=" + str(output_root))

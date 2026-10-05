@@ -3,12 +3,13 @@ import math
 import os
 import shutil
 import tempfile
+import zipfile
 from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
 
 from lxml import etree as ET
 from qgis.PyQt.QtCore import QDate, QVariant
-from qgis.PyQt.QtGui import QFont
+from qgis.PyQt.QtGui import QColor, QFont
 from qgis.PyQt.QtWidgets import QMessageBox
 from qgis.PyQt.QtXml import QDomDocument
 from qgis.core import (
@@ -17,7 +18,7 @@ from qgis.core import (
     QgsFeature, QgsField, QgsGeometry, QgsLayoutExporter, QgsLayoutItemMap,
     QgsLayoutPoint, QgsLayoutSize, QgsMapLayerProxyModel, QgsPalLayerSettings,
     QgsPrintLayout, QgsProject, QgsReadWriteContext, QgsVectorFileWriter,
-    QgsMarkerSymbol, QgsSingleSymbolRenderer,
+    QgsLineSymbol, QgsMarkerSymbol, QgsSingleSymbolRenderer,
     QgsVariantUtils, QgsVectorLayer, QgsVectorLayerSimpleLabeling, QgsWkbTypes,
 )
 
@@ -88,6 +89,12 @@ class UavWorkflow:
         self.hukuin.setMaximum(10000)
         self.hukuin.setDecimals(3)
         self.haDecimals.setValue(2)
+        self.scale.setScale(5000)
+        self.locationScale.setScale(5000)
+        self.locationScale.setEnabled(self.isIchizu.isChecked())
+        self.isIchizu.toggled.connect(self.locationScale.setEnabled)
+        self.assignmentOlso.setFilter("オルソ画像 (*.tif *.tiff *.jpg *.jpeg *.png *.jp2 *.ecw *.img)")
+        self.assignmentOlso.setEnabled(self.makeAssignment.isChecked())
         self.result_layers = []
 
     @staticmethod
@@ -110,6 +117,7 @@ class UavWorkflow:
                 "hectare_display_decimals": self.haDecimals.value(),
                 "create_location_map": self.isIchizu.isChecked(),
                 "location_direction": self.ichizuDirection.currentIndex(),
+                "location_scale": self.locationScale.scale(),
                 "minimum_exclusion_area_a": self.minJochi.value(),
                 "road_width_m": self.hukuin.value(),
                 "minimum_reference_distance_m": self.minKijuntenkan.value(),
@@ -123,6 +131,8 @@ class UavWorkflow:
                 "backup_qgz": self.backupQgz.isChecked(),
                 "config_save_mode": self.isSaveConfig.currentIndex(),
                 "config_file": self.saveConfig.filePath(),
+                "make_assignment": self.makeAssignment.isChecked(),
+                "assignment_ortho": self.assignmentOlso.filePath(),
             },
         }
 
@@ -138,8 +148,8 @@ class UavWorkflow:
         settings = data.get("map", {})
         crs = QgsCoordinateReferenceSystem(settings.get("crs", ""))
         self.crs.setCrs(crs)
-        if settings.get("scale"):
-            self.scale.setScale(float(settings["scale"]))
+        self.scale.setScale(float(settings.get("scale") or 5000))
+        self.locationScale.setScale(float(settings.get("location_scale", settings.get("scale") or 5000)))
         self.paper.setCurrentIndex(1 if settings.get("paper") == "A3" else 0)
         self.isJochikeisan.setChecked(bool(settings.get("show_deduction", False)))
         self.isIchizu.setChecked(bool(settings.get("create_location_map", False)))
@@ -163,6 +173,8 @@ class UavWorkflow:
         output = data.get("output", {})
         self.fileName.setFilePath(self.clean_html_text(output.get("directory")))
         self.backupQgz.setChecked(bool(output.get("backup_qgz", False)))
+        self.makeAssignment.setChecked(bool(output.get("make_assignment", False)))
+        self.assignmentOlso.setFilePath(self.clean_html_text(output.get("assignment_ortho")))
         mode = int(output.get("config_save_mode", 0))
         self.isSaveConfig.setCurrentIndex(mode if mode in (0, 1, 2) else 0)
         self.saveConfig.setFilePath(self.clean_html_text(output.get("config_file")))
@@ -178,12 +190,21 @@ class UavWorkflow:
             raise ValueError("メートル単位の平面直角座標系などを指定してください")
         if not math.isfinite(self.scale.scale()) or self.scale.scale() <= 0:
             raise ValueError("有効な縮尺を指定してください")
+        if self.isIchizu.isChecked() and (
+                not math.isfinite(self.locationScale.scale()) or self.locationScale.scale() <= 0):
+            raise ValueError("位置図の有効な縮尺を指定してください")
         if not self.fileName.filePath() or not Path(self.fileName.filePath()).is_dir():
             raise ValueError("出力先には存在するフォルダを指定してください")
         if self.sagyodoLine.currentLayer() and self.hukuin.value() <= 0:
             raise ValueError("作業道幅員は0より大きい値を指定してください")
         if self.isSaveConfig.currentIndex() == 2 and not self.saveConfig.filePath().strip():
             raise ValueError("設定保存ファイルを指定してください")
+        if self.makeAssignment.isChecked():
+            image = Path(self.assignmentOlso.filePath())
+            if not self.assignmentOlso.filePath().strip() or not image.is_file():
+                raise ValueError("提出用オルソ画像には存在する画像ファイルを指定してください")
+            if image.suffix.lower() not in (".tif", ".tiff", ".jpg", ".jpeg", ".png", ".jp2", ".ecw", ".img"):
+                raise ValueError("提出用オルソ画像の形式を確認してください")
         self.attribute_warnings = set()
         for name, label in (
             ("seizubi2", "製図年月日の個別指定（基本情報を継承）"),
@@ -391,10 +412,11 @@ class UavWorkflow:
                         Qgis.EndCapStyle.Flat, Qgis.JoinStyle.Miter, 10,
                     ), "作業道バッファ")
                 name = self.clean_html_text(self.evaluate_attribute(expression, layer, feature)).strip()
-                exclusion_sources.append((geometry, name))
+                description = "・".join(filter(None, (name, f"幅{self.hukuin.value():g}m"))) if is_road else name
+                exclusion_sources.append((geometry, name, description))
 
         exclusions_union = self.checked_operation(
-            QgsGeometry.unaryUnion([geometry for geometry, _ in exclusion_sources]),
+            QgsGeometry.unaryUnion([geometry for geometry, _, _ in exclusion_sources]),
             "除地の重複統合",
         ) if exclusion_sources else QgsGeometry()
         accepted = []
@@ -406,9 +428,13 @@ class UavWorkflow:
             accepted_parts = []
             for part in self.polygon_parts(clipped):
                 names = []
-                for exclusion_geometry, name in exclusion_sources:
-                    if name and name not in names and part.intersection(exclusion_geometry).area() > 1e-8:
-                        names.append(name)
+                descriptions = []
+                for exclusion_geometry, name, description in exclusion_sources:
+                    if part.intersection(exclusion_geometry).area() > 1e-8:
+                        if name and name not in names:
+                            names.append(name)
+                        if description and description not in descriptions:
+                            descriptions.append(description)
                 label = "・".join(names)
                 # 閾値は表示丸め前の面積へ適用する。
                 if part.area() < minimum:
@@ -416,6 +442,7 @@ class UavWorkflow:
                     continue
                 accepted_parts.append(part)
                 accepted.append((part, {"label": label, "source_id": attributes["source_id"],
+                                        "calculation_label": "・".join(descriptions),
                                         "area_m2": part.area()}))
             removed = QgsGeometry.unaryUnion(accepted_parts) if accepted_parts else QgsGeometry()
             result = self.checked_operation(geometry.difference(removed), "除地の除去") if accepted_parts else QgsGeometry(geometry)
@@ -428,20 +455,25 @@ class UavWorkflow:
                                "申請ha": float(self.hectares(self.application_area, 2)),
                                "更新ha": float(self.hectares(self.work_area, 2))})
         self.work_terms = [(attributes["label"], geometry.area()) for geometry, attributes in polygons]
-        self.exclusion_terms = [(attributes["label"], geometry.area()) for geometry, attributes in accepted]
+        self.exclusion_terms = [(attributes["calculation_label"], geometry.area()) for geometry, attributes in accepted]
         self.original_layer = self.memory_polygon_layer("更新区域（除去前）", [
             (geometry, {**attributes, "area_m2": geometry.area()}) for geometry, attributes in polygons
         ])
         self.exclusion_layer = self.memory_polygon_layer("除地（採用部分）", accepted)
         self.application_layer = self.memory_polygon_layer("申請区域（除去後）", results, True)
-        self.result_layers = [self.original_layer, self.exclusion_layer, self.application_layer,
-                              self.reference_layer]
+        self.result_layers = [self.original_layer, self.exclusion_layer, self.application_layer]
+        if self.reference_layer is not None:
+            self.result_layers.append(self.reference_layer)
         self.apply_polygon_style(self.application_layer, "polygon.qml")
         self.apply_polygon_style(self.exclusion_layer, "exclusion_polygon.qml")
 
     def calculate_reference_points(self):
+        self.reference_layer = None
+        self.reference_distance = None
         source = self.kijunten.currentLayer()
-        if source is None or not source.isValid() or source.geometryType() != QgsWkbTypes.PointGeometry:
+        if source is None:
+            return
+        if not source.isValid() or source.geometryType() != QgsWkbTypes.PointGeometry:
             raise ValueError("基準点のポイントレイヤを指定してください（2点必要です）")
         text = self.kijuntenExp.expression().strip()
         # QGISの真偽値変換を使う。Pythonのbool('false')等とは区別する。
@@ -508,15 +540,25 @@ class UavWorkflow:
         placement.setAllowDegradedPlacement(True)
         settings.setPlacementSettings(placement)
         text_format = settings.format()
-        text_format.setFont(QFont("Yu Gothic"))
+        label_font = QFont("Yu Gothic")
+        label_font.setBold(True)
+        text_format.setFont(label_font)
         text_format.setSize(9)
         text_format.setSizeUnit(Qgis.RenderUnit.Points)
+        text_format.setColor(QColor("black"))
+        buffer = text_format.buffer()
+        buffer.setEnabled(True)
+        buffer.setColor(QColor("white"))
+        buffer.setSize(0.5)
+        buffer.setSizeUnit(Qgis.RenderUnit.Millimeters)
+        text_format.setBuffer(buffer)
         settings.setFormat(text_format)
         layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
         layer.setLabelsEnabled(any(self.clean_html_text(feature["label"]).strip() for feature in layer.getFeatures()))
 
     def log_calculation(self):
-        self.append_output_log(f"基準点: 2点 / 点間距離: {self.reference_distance:.6f} m")
+        if self.reference_layer is not None:
+            self.append_output_log(f"基準点: 2点 / 点間距離: {self.reference_distance:.6f} m")
         for title, terms, total in (("更新面積", self.work_terms, self.work_area),
                                     ("除地", self.exclusion_terms, self.exclusion_area)):
             for name, area in terms:
@@ -542,19 +584,19 @@ class UavWorkflow:
         layout.renderContext().setDpi(300)
         return layout
 
-    def set_map_extent(self, map_item, layers):
+    def set_map_extent(self, map_item, layers, scale=None):
         map_item.setCrs(self.crs.crs())
         map_item.setLayers(layers)
         map_item.setKeepLayerSet(True)
         extent = self.original_layer.extent()
-        if self.reference_layer in layers:
+        if self.reference_layer is not None and self.reference_layer in layers:
             extent.combineExtentWith(self.reference_layer.extent())
         if extent.isEmpty():
             raise ValueError("ポリゴンの表示範囲を取得できません")
         map_item.zoomToExtent(extent)
-        map_item.setScale(self.scale.scale())
+        map_item.setScale(self.scale.scale() if scale is None else scale)
         frame_extent = map_item.extent()
-        if self.reference_layer in layers and any(
+        if self.reference_layer is not None and self.reference_layer in layers and any(
                 not frame_extent.contains(feature.geometry().asPoint())
                 for feature in self.reference_layer.getFeatures()):
             raise ValueError("指定縮尺では基準点が地図枠の外になります。縮尺の分母を大きくしてください")
@@ -565,7 +607,11 @@ class UavWorkflow:
         output = self.output_dir()
         shutil.copytree(ROOT / "html_shinsoku" / "asset", output / "asset", dirs_exist_ok=True)
         ortho = self.olso.currentLayer()
-        layers = [self.reference_layer, self.exclusion_layer, self.application_layer] + ([ortho] if ortho else [])
+        layers = [self.exclusion_layer, self.application_layer]
+        if self.reference_layer is not None:
+            layers.insert(0, self.reference_layer)
+        if ortho is not None:
+            layers.append(ortho)
         layout = self.create_uav_layout(layers)
         exporter = QgsLayoutExporter(layout)
         # HTML内の地図には地理参照情報は不要。レイアウトを直接画像化し、
@@ -580,6 +626,35 @@ class UavWorkflow:
             self.export_location()
         self._editable_projects.save()
         self.write_uav_html()
+        if self.makeAssignment.isChecked():
+            self.export_assignment_zip()
+
+    def export_assignment_zip(self):
+        output = self.output_dir()
+        name = self.safe_file_name(self.rinshohan.text())
+        image = Path(self.assignmentOlso.filePath())
+        archive = output / f"{name} - 提出用.zip"
+        image_name = f"{name} - オルソ{image.suffix.lower()}"
+        shp_dir = output / "shp"
+        shapefile = shp_dir / f"{name} - 申請区域.shp"
+        for suffix in (".shp", ".shx", ".dbf", ".prj"):
+            if not shapefile.with_suffix(suffix).is_file():
+                raise OSError(f"提出用シェープファイルがありません: {shapefile.with_suffix(suffix).name}")
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as bundle:
+            for path in sorted(shp_dir.iterdir()):
+                if path.is_file() and path.name.startswith(shapefile.stem + "."):
+                    bundle.write(path, f"shp/{path.name}")
+            bundle.write(image, image_name, compress_type=zipfile.ZIP_STORED)
+            # JPEG等の地理参照用ファイルも、画像と同じ新しい名前で同梱する。
+            for suffix in (".tfw", ".tifw", ".jgw", ".jpgw", ".pgw", ".pngw", ".wld", ".prj"):
+                sidecar = image.with_suffix(suffix)
+                if sidecar.is_file():
+                    bundle.write(sidecar, str(Path(image_name).with_suffix(suffix)))
+            for suffix in (".aux.xml", ".ovr"):
+                sidecar = Path(str(image) + suffix)
+                if sidecar.is_file():
+                    bundle.write(sidecar, image_name + suffix)
+        self.append_output_log(f"提出用ZIP: {self.displayed_output_path(archive)}")
 
     def export_shapefile(self):
         directory = self.output_dir() / "shp"
@@ -636,8 +711,46 @@ class UavWorkflow:
             raise ValueError("位置図タイトルを設定できません")
         # captureで各図面のスタイルを保存済み。同じ地物IDを維持して
         # GeoPackageに申請区域の重複テーブルを作らない。
-        location_polygon = self.application_layer
-        self.apply_polygon_style(location_polygon, "location_polygon.qml")
+        # 除去後ポリゴンの境界は除地の青線と重なるため、共有境界を赤線から除く。
+        def boundary(geometry):
+            geometry = QgsGeometry(geometry)
+            geometry.convertToMultiType()
+            return QgsGeometry.collectGeometry([
+                QgsGeometry.fromPolylineXY(ring)
+                for polygon in geometry.asMultiPolygon() for ring in polygon
+            ])
+
+        exclusion_boundaries = [boundary(feature.geometry())
+                                for feature in self.exclusion_layer.getFeatures()]
+        excluded_boundary = QgsGeometry.unaryUnion(exclusion_boundaries) if exclusion_boundaries else None
+        location_polygon = QgsVectorLayer(
+            f"MultiLineString?crs={self.crs.crs().authid()}", "位置図の区域外周", "memory")
+        location_polygon.dataProvider().addAttributes(list(self.application_layer.fields()))
+        location_polygon.updateFields()
+        for feature in self.application_layer.getFeatures():
+            outline = boundary(feature.geometry())
+            if excluded_boundary is not None:
+                outline = self.checked_operation(outline.difference(excluded_boundary), "位置図の共有境界除去")
+            if outline.isEmpty():
+                continue
+            outline.convertToMultiType()
+            line = QgsFeature(location_polygon.fields())
+            line.setGeometry(outline)
+            line.setAttributes(feature.attributes())
+            if not location_polygon.dataProvider().addFeature(line):
+                raise ValueError("位置図の区域外周を作成できません")
+        location_polygon.setRenderer(QgsSingleSymbolRenderer(QgsLineSymbol.createSimple({
+            "line_color": "227,26,28,255", "line_width": "0.53", "line_width_unit": "MM",
+            "capstyle": "flat",
+        })))
+        location_polygon.updateExtents()
+        if self.application_layer.labeling():
+            location_labels = self.application_layer.labeling().settings()
+            location_labels.placement = Qgis.LabelPlacement.Line
+            location_polygon.setLabeling(QgsVectorLayerSimpleLabeling(location_labels))
+            location_polygon.setLabelsEnabled(self.application_layer.labelsEnabled())
+        self.apply_polygon_style(self.exclusion_layer, "location_exclusion_polygon.qml")
+        self.exclusion_layer.setLabelsEnabled(False)
         inputs = [self.polygon.currentLayer(), self.jochiPolygon.currentLayer(),
                   self.sagyodoLine.currentLayer(), self.kijunten.currentLayer()]
         canvas = list(self.iface.mapCanvas().layers()) if self.iface else []
@@ -645,7 +758,8 @@ class UavWorkflow:
         ortho = self.olso.currentLayer()
         if ortho and ortho not in backgrounds:
             backgrounds.append(ortho)
-        self.set_map_extent(map_item, [location_polygon] + backgrounds)
+        self.set_map_extent(map_item, [self.exclusion_layer, location_polygon] + backgrounds,
+                            scale=self.locationScale.scale())
         if not self.set_location_scale_bars(layout, map_item):
             raise ValueError("位置図の縮尺を設定できません")
         path = self.output_dir() / f"{self.safe_file_name(self.rinshohan.text())} - 位置図.pdf"
@@ -653,8 +767,9 @@ class UavWorkflow:
         if QgsLayoutExporter(layout).exportToPdf(str(path), settings) != QgsLayoutExporter.Success:
             raise OSError("位置図PDFの出力に失敗しました")
         self._editable_projects.capture(layout, "location", path.name,
-                                        self.result_layers)
+                                        self.result_layers + [location_polygon])
         self.apply_polygon_style(self.application_layer, "polygon.qml")
+        self.apply_polygon_style(self.exclusion_layer, "exclusion_polygon.qml")
 
     def area_quantity(self, value):
         text = self.format_decimal(value, self.areaDecimals.value())
@@ -669,7 +784,7 @@ class UavWorkflow:
                 parts.append(("+", "+"))
             plain, latex = self.area_quantity(area)
             if name:
-                plain, latex = f"{name} {plain}", rf"{self.latex_text(name)}\;{latex}"
+                plain, latex = f"{plain}（{name}）", rf"{latex}\,{self.latex_text('（' + name + '）')}"
             parts.append((plain, latex))
         if len(terms) > 1:
             displayed_sum = sum(Decimal(self.format_decimal(area, self.areaDecimals.value())) for _, area in terms)
@@ -680,6 +795,9 @@ class UavWorkflow:
 
     def write_uav_html(self):
         root = ET.parse(str(ROOT / "html_shinsoku" / "index.html"), ET.HTMLParser()).getroot()
+        if self.reference_layer is None:
+            for legend in root.xpath("//*[@id='map_legend']"):
+                legend.getparent().remove(legend)
         for name, text in {
             "seizubi": self.seizubi.date().toString("yyyy年MM月dd日"),
             "seizusha": self.seizusha.text(), "seizujigyosha": self.seizujigyosha.text(),
@@ -689,6 +807,10 @@ class UavWorkflow:
         }.items():
             for element in root.xpath(f"//*[@id='{name}']"):
                 element.text = text
+        for element in root.xpath("//*[@id='scale']"):
+            self.apply_latex_parts(element, [
+                (f"1:{self.scale.scale():g}", rf"1\mathbin{{:}}{self.scale.scale():g}"),
+            ])
         root.find("head/title").text = f"{self.rinshohan.text()} - 申請区域図"
         body = root.find("body")
         body.set("data-paper", self.paper.currentText())
@@ -719,10 +841,26 @@ class UavWorkflow:
             rows = [("更新面積", [(f"{self.hectares(self.work_area, 2)} ha", rf"{self.hectares(self.work_area, 2)}\,\mathrm{{ha}}")]),
                     ("申請面積", [(f"{self.hectares(self.application_area, 2)} ha", rf"\color{{red}}{{{self.hectares(self.application_area, 2)}\,\mathrm{{ha}}}}")])]
         for title, parts in rows:
-            row = ET.SubElement(panel, "div", {"class": "calc-row"})
-            ET.SubElement(row, "div", {"class": "calc-label"}).text = title + ":"
+            is_application = title == "申請面積"
+            row = ET.SubElement(panel, "div", {"class": "calc-row calc-application" if is_application else "calc-row"})
+            ET.SubElement(row, "div", {"class": "calc-label"}).text = title
             formula = ET.SubElement(row, "div", {"class": "calc-formula"})
-            self.apply_latex_parts(formula, parts)
+            if is_application:
+                self.apply_latex_parts(formula, parts[:-2] if self.isJochikeisan.isChecked() else [])
+                result = ET.SubElement(row, "div", {"class": "calc-result"})
+                self.apply_latex_parts(result, parts[-2:] if self.isJochikeisan.isChecked() else parts)
+                ET.SubElement(row, "div", {"class": "calc-result-caption"}).text = "ヘクタール換算"
+            elif title == "除地":
+                formula.set("class", "calc-formula calc-deduction")
+                pending = []
+                for part in parts:
+                    pending.append(part)
+                    if part[0] not in ("+", "=", "≃"):
+                        line = ET.SubElement(formula, "div", {"class": "deduction-term"})
+                        self.apply_latex_parts(line, pending)
+                        pending = []
+            else:
+                self.apply_latex_parts(formula, parts)
         path = self.output_dir() / "index.html"
         path.write_text("<!DOCTYPE html>\n" + ET.tostring(root, encoding="unicode", method="html"), encoding="utf-8")
         self.append_output_log(f"申請区域図: {self.displayed_output_path(path)}")
