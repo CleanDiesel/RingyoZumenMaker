@@ -80,6 +80,7 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
             path
             for path in staging_dir.rglob("*")
             if path.is_file() and rollback_dir not in path.parents
+            and path != staging_dir / OUTPUT_MANIFEST_NAME
         ]
         current_paths = {
             path.relative_to(staging_dir)
@@ -92,20 +93,37 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
             if self.safe_generated_output_file(final_output_dir, path) is not None
         }
 
-        manifest_paths = (
-            current_paths
-            if backup_generated
-            else current_paths | previous_existing_paths
-        )
+        manifest_paths = current_paths
         manifest_source = staging_dir / OUTPUT_MANIFEST_NAME
         self.write_output_manifest(manifest_source, manifest_paths)
         staged_files.append(manifest_source)
+
+        # Never overwrite a user-added file which was not recorded as generated.
+        for relative_path in current_paths:
+            target_path = final_output_dir / relative_path
+            if target_path.is_symlink() or not target_path.resolve().is_relative_to(final_output_dir.resolve()):
+                QMessageBox.warning(self, "エラー", f"出力先のリンクが出力フォルダ外を指しています:\n{target_path}")
+                return False
+            if target_path.exists() and relative_path not in previous_existing_paths:
+                QMessageBox.warning(self, "エラー", f"生成対象と同名の未登録ファイルがあります。退避してください:\n{target_path}")
+                return False
 
         backup_batch_dir = None
         backed_up = []
         committed = []
 
         try:
+            if not backup_generated:
+                # 成功するまで一時退避し、失敗時は前回の成果を復元する。
+                for relative_path in sorted(previous_existing_paths - current_paths,
+                                            key=lambda path: path.as_posix()):
+                    source_path = self.safe_generated_output_file(final_output_dir, relative_path)
+                    if source_path is None:
+                        continue
+                    retired_path = rollback_dir / relative_path
+                    retired_path.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(source_path, retired_path)
+                    backed_up.append((source_path, retired_path))
             if backup_generated and previous_existing_paths:
                 backup_root = final_output_dir / "backup"
                 created_at = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -129,6 +147,12 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
                     backup_path.parent.mkdir(parents=True, exist_ok=True)
                     os.replace(source_path, backup_path)
                     backed_up.append((source_path, backup_path))
+
+                previous_manifest = final_output_dir / OUTPUT_MANIFEST_NAME
+                if previous_manifest.is_file():
+                    backup_path = backup_batch_dir / OUTPUT_MANIFEST_NAME
+                    os.replace(previous_manifest, backup_path)
+                    backed_up.append((previous_manifest, backup_path))
 
             for source_path in staged_files:
                 relative_path = source_path.relative_to(staging_dir)
@@ -186,14 +210,15 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
             )
             return False
 
+        self.remove_empty_generated_directories(final_output_dir, previous_existing_paths)
         if backup_batch_dir is not None:
-            self.remove_empty_generated_directories(
-                final_output_dir,
-                previous_existing_paths,
-            )
             self.append_output_log(
                 f"以前の生成ファイルをバックアップしました: {backup_batch_dir}"
             )
+        elif previous_existing_paths - current_paths:
+            self.append_output_log("今回使わない前回の生成ファイルを破棄しました（バックアップなし）。")
+
+        (final_output_dir / "backup").mkdir(exist_ok=True)
 
         return True
 
@@ -240,6 +265,7 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
                 add_if_file(Path("asset") / source_path.relative_to(asset_source))
 
         asset_dir = output_dir / "asset"
+        add_if_file("asset/map.png")
         map_pattern = re.compile(
             r"(?:shui_\d+|haisui_\d+|shui_all|haisui_all|mix)_map\.png"
         )
@@ -250,7 +276,7 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
 
         qgz_dir = output_dir / "qgz"
         qgz_pattern = re.compile(
-            r"(?:shui_\d+|haisui_\d+|shui_all|haisui_all|mix|location)\.qgz"
+            r"(?:shui_\d+|haisui_\d+|shui_all|haisui_all|mix|application|location)\.qgz"
         )
         for name in ("ringyo_zumen.gpkg", "houi2.svg", "操作説明.md"):
             add_if_file(Path("qgz") / name)
@@ -258,6 +284,13 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
             for qgz_path in qgz_dir.glob("*.qgz"):
                 if qgz_pattern.fullmatch(qgz_path.name):
                     add_if_file(qgz_path.relative_to(output_dir))
+
+        # Migration from the immediately preceding UAV output structure.
+        for shp_path in (output_dir / "shp").glob("* - 申請区域.shp"):
+            for suffix in (".shp", ".shx", ".dbf", ".prj", ".cpg", ".qml", ".qmd", ".shp.xml"):
+                add_if_file(shp_path.with_suffix(suffix).relative_to(output_dir))
+        for archive in output_dir.glob("* - 提出用.zip"):
+            add_if_file(archive.relative_to(output_dir))
 
         return paths
 
@@ -602,10 +635,8 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
             )
             return False
 
-        parts = [
-            self.clean_html_text(self.rinshohan.text()).strip(),
-            self.clean_html_text(self.sanrinshoyusha.text()).strip(),
-        ]
+        metadata = self.drawing_metadata()
+        parts = [metadata["name"], metadata["owner"]]
         title_label.setText("　".join(part for part in parts if part))
         title_label.update()
         return True

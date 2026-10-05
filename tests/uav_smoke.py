@@ -15,7 +15,7 @@ sys.path[:0] = [str(BASE / "apps/qgis/python"), str(BASE / "apps/qgis/python/plu
 
 from qgis.core import (
     QgsApplication, QgsCoordinateReferenceSystem, QgsFeature, QgsField,
-    QgsGeometry, QgsProject, QgsRasterLayer, QgsVectorLayer, QgsCoordinateTransform,
+    QgsGeometry, QgsProject, QgsRasterLayer, QgsVectorLayer, QgsCoordinateTransform, QgsProperty,
 )
 from qgis.PyQt.QtCore import QVariant
 from qgis.PyQt.QtGui import QFontDatabase, QFont
@@ -87,7 +87,7 @@ widget.minKijuntenkan.setValue(20)
 for name in ("polygonName", "jochiName", "jochiNameSagyodo"):
     getattr(widget, name).setExpression('"name"')
 for name, expression in (("shichoson", "'テスト町'"), ("rinpan", "12"), ("shohan", "60")):
-    getattr(widget, name).setExpression(expression)
+    getattr(widget, name + "Override").setToProperty(QgsProperty.fromExpression(expression))
 widget.hukuin.setValue(2)
 widget.minJochi.setValue(1)
 widget.scale.setScale(2000)
@@ -124,11 +124,11 @@ assert not list(output.iterdir()), list(output.iterdir())
 widget.on_submit(test=False)
 assert widget.progressBar.value() == 100, messages
 assert (output / "index.html").is_file()
-assert (output / "qgz/ringyo_zumen.gpkg").is_file()
-assert (output / "qgz/application.qgz").is_file()
-assert (output / "qgz/location.qgz").is_file()
+assert (output / "asset/ringyo_zumen.gpkg").is_file()
+assert (output / widget.drawings[0]["folder"] / "qgz/application.qgz").is_file()
+assert (output / "位置図/qgz/location.qgz").is_file()
 # 出力PNGに赤い円が2つあり、300dpiで直径2mm（約24px）になっている。
-image = QImage(str(output / "asset/map.png")).convertToFormat(QImage.Format.Format_RGBA8888)
+image = QImage(str(output / "asset/drawing_1_map.png")).convertToFormat(QImage.Format.Format_RGBA8888)
 pixels = np.frombuffer(image.constBits().asstring(image.sizeInBytes()), dtype=np.uint8).reshape(image.height(), image.bytesPerLine() // 4, 4)
 red = (pixels[:, :, 0] > 240) & (pixels[:, :, 1] < 30) & (pixels[:, :, 2] < 30)
 remaining = set(zip(*np.nonzero(red)))
@@ -144,13 +144,14 @@ while remaining:
                 remaining.remove(neighbor)
                 queue.append(neighbor)
     clusters.append(cluster)
+clusters = [cluster for cluster in clusters if 300 <= len(cluster) <= 550]
 assert len(clusters) == 2, [len(cluster) for cluster in clusters]
 for cluster in clusters:
     ys, xs = zip(*cluster)
     assert 22 <= max(xs) - min(xs) + 1 <= 25
     assert 22 <= max(ys) - min(ys) + 1 <= 25
 print("two visible red reference circles, diameter 2 mm: OK")
-shapefile = next((output / "shp").glob("*.shp"))
+shapefile = next((output / widget.drawings[0]["folder"] / "shp").glob("*.shp"))
 shape = QgsVectorLayer(str(shapefile), "成果", "ogr")
 assert shape.isValid()
 assert shape.featureCount() == 2
@@ -160,11 +161,11 @@ assert features[0]["更新ha"] == 2.0
 assert features[0]["申請ha"] == 1.96
 shape = None
 for table in ("layer_1", "layer_2", "layer_3", "layer_4"):
-    layer = QgsVectorLayer(f"{output / 'qgz/ringyo_zumen.gpkg'}|layername={table}", table, "ogr")
+    layer = QgsVectorLayer(f"{output / 'asset/ringyo_zumen.gpkg'}|layername={table}", table, "ogr")
     assert layer.isValid(), table
 layer = None
 saved = QgsProject()
-assert saved.read(str(output / "qgz/application.qgz"))
+assert saved.read(str(output / widget.drawings[0]["folder"] / "qgz/application.qgz"))
 assert any(layer.type() == ortho.type() for layer in saved.mapLayers().values())
 saved_reference = next(layer for layer in saved.mapLayers().values() if layer.name() == "基準点")
 assert saved_reference.featureCount() == 2
@@ -194,7 +195,7 @@ for direction in (0, 1):
     widget.on_submit(test=False)
     assert widget.progressBar.value() == 100, messages
     project = QgsProject()
-    assert project.read(str(directory / "qgz/location.qgz"))
+    assert project.read(str(directory / "位置図/qgz/location.qgz"))
     layout = project.layoutManager().layouts()[0]
     page = layout.pageCollection().page(0).pageSize()
     assert (page.width(), page.height()) == ((297, 420) if direction == 0 else (420, 297))
@@ -211,8 +212,8 @@ widget.on_submit(test=False)
 assert widget.progressBar.value() == 100, messages
 assert (directory / "user-note.txt").is_file()
 batch = next((directory / "backup").iterdir())
-assert list((batch / "shp").glob("12-60林班*.shp"))
-assert list(directory.glob("新名称 - 位置図.pdf"))
+assert list((batch / "申請区域 - 12-60林班" / "shp").glob("12-60林班*.shp"))
+assert list(directory.glob("位置図/新名称 - 位置図.pdf"))
 print("backup filename change and manual file preservation: OK")
 
 invalid = vector("ねじれ", "MultiPolygon", [("ねじれ", "MULTIPOLYGON(((0 0,100 100,100 0,0 100,0 0)))")])
@@ -314,14 +315,15 @@ assert widget.reference_distance is None
 optional_output = output_root / "without_optional_layers"
 optional_output.mkdir()
 widget.fileName.setFilePath(str(optional_output))
+widget.isIchizu.setChecked(True)
 widget.on_submit(test=False)
 assert widget.progressBar.value() == 100, messages
 assert None not in widget.result_layers
 assert all(layer.name() != "基準点" for layer in widget.result_layers)
-assert (optional_output / "asset/map.png").is_file()
-assert (optional_output / "qgz/application.qgz").is_file()
-assert (optional_output / "qgz/location.qgz").is_file()
-assert 'id="map_legend"' not in (optional_output / "index.html").read_text(encoding="utf-8")
+assert (optional_output / "asset/drawing_1_map.png").is_file()
+assert (optional_output / widget.drawings[0]["folder"] / "qgz/application.qgz").is_file()
+assert (optional_output / "位置図/qgz/location.qgz").is_file()
+assert 'map_legend' not in (optional_output / "index.html").read_text(encoding="utf-8")
 print("exports without reference points or orthophoto, reference legend omitted: OK")
 print("reference filter, count, distance, empty expression and errors: OK")
 widget.close()

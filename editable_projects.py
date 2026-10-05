@@ -1,6 +1,7 @@
 """Persist each exported layout with its own styles and editable label positions."""
 from pathlib import Path
 import os
+import re
 import shutil
 import tempfile
 import zipfile
@@ -16,8 +17,12 @@ from qgis.core import (
 
 
 class EditableProjects:
-    def __init__(self, directory):
+    def __init__(self, directory, shared_files=(), shared_directory=None, location_directory=None, gpkg_directory=None):
         self.directory = Path(directory)
+        self.shared_directory = Path(shared_directory) if shared_directory is not None else self.directory
+        self.location_directory = Path(location_directory) if location_directory is not None else self.shared_directory
+        self.gpkg_directory = Path(gpkg_directory) if gpkg_directory is not None else self.shared_directory
+        self.shared_files = tuple(Path(path) for path in shared_files if path)
         self.drawings = []
         self.persistent_layer_ids = set()
 
@@ -58,7 +63,9 @@ class EditableProjects:
 
     def save(self):
         self.directory.mkdir(parents=True, exist_ok=True)
-        gpkg = self.directory / "ringyo_zumen.gpkg"
+        self.shared_directory.mkdir(parents=True, exist_ok=True)
+        self.gpkg_directory.mkdir(parents=True, exist_ok=True)
+        gpkg = self.gpkg_directory / "ringyo_zumen.gpkg"
         if gpkg.exists():
             gpkg.unlink()
         sources = {}
@@ -87,13 +94,11 @@ class EditableProjects:
 
         for name, output, xml, layers in self.drawings:
             project = QgsProject()
-            project_path = self.directory / f"{name}.qgz"
+            project_path = (self.location_directory if name == "location" else self.directory) / f"{name}.qgz"
+            project_path.parent.mkdir(parents=True, exist_ok=True)
             project.setFileName(str(project_path))
-            project.setFilePathStorage(
-                Qgis.FilePathType.Absolute
-                if name == "location"
-                else Qgis.FilePathType.Relative
-            )
+            # 外部背景は絶対パス。共有成果だけを保存後に相対化する。
+            project.setFilePathStorage(Qgis.FilePathType.Absolute)
             project.setTransformContext(QgsProject.instance().transformContext())
             labeling_settings = QgsProject.instance().labelingEngineSettings()
             labeling_settings.setFlag(Qgis.LabelingFlag.UsePartialCandidates, True)
@@ -171,7 +176,7 @@ class EditableProjects:
             document.setContent(xml)
             layout = QgsPrintLayout(project)
             layout.loadFromTemplate(document, QgsReadWriteContext())
-            layout.setName(name)
+            layout.setName(Path(name).name)
             layout.renderContext().setDpi(300)
             for item in layout.items():
                 if isinstance(item, QgsLayoutItemMap):
@@ -193,24 +198,28 @@ class EditableProjects:
                 elif isinstance(item, QgsLayoutItemPicture) and item.picturePath():
                     source = Path(item.picturePath())
                     if source.is_file():
-                        target = self.directory / source.name
+                        target = project_path.parent / source.name
                         shutil.copy2(source, target)
                         item.setPicturePath(str(target))
             project.layoutManager().addLayout(layout)
             if not project.write():
-                raise RuntimeError(f"QGZ保存失敗: {name}")
-            project.clear()
+                raise RuntimeError(f"QGZ保存失敗: {name}: {project.error()}")
+            references = [gpkg]
+            references.extend(path for path in self.shared_files if any(
+                Path(layer.source().split('|')[0]).resolve() == path.resolve()
+                for layer in layers.values() if layer.providerType() != 'memory'))
             if name == "location":
-                self._make_project_references_relative(
-                    project_path,
-                    (gpkg, self.directory / "houi2.svg"),
-                )
+                references.append(self.location_directory / "houi2.svg")
+            project.clear()
+            self._make_project_references_relative(project_path, references)
         instructions = Path(__file__).parent / "qgs_editing.md"
         text = instructions.read_text(encoding="utf-8")
         text += "\n## 今回出力した図面\n\n| QGZ | レイアウト | 書き出し先（出力フォルダ基準） |\n|---|---|---|\n"
         for name, output, _, _ in self.drawings:
-            text += f"| `{name}.qgz` | `{name}` | `{output.replace('|', '&#124;')}` |\n"
-        (self.directory / "操作説明.md").write_text(text, encoding="utf-8")
+            qgz_path = ((self.location_directory / "location.qgz").relative_to(self.directory).as_posix()
+                        if name == "location" else f"{name}.qgz")
+            text += f"| `{qgz_path}` | `{Path(name).name}` | `{output.replace('|', '&#124;')}` |\n"
+        (self.shared_directory / "QGISで図面を編集する方法.md").write_text(text, encoding="utf-8")
         self.drawings.clear()
         self.persistent_layer_ids.clear()
 
@@ -224,7 +233,9 @@ class EditableProjects:
             if not source_path.exists():
                 continue
             resolved = source_path.resolve()
-            relative_path = f"./{source_path.name}"
+            relative_path = Path(os.path.relpath(source_path, project_path.parent)).as_posix()
+            if not relative_path.startswith("."):
+                relative_path = "./" + relative_path
             replacement_groups.append((
                 source_path.name,
                 {str(resolved), resolved.as_posix()},
@@ -239,6 +250,11 @@ class EditableProjects:
         for info, data in entries:
             if info.filename.lower().endswith(".qgs"):
                 text = data.decode("utf-8")
+                # QGISの読込側にも相対パスを解決させる。外部の絶対パスは保持。
+                text = re.sub(r'(<properties name="Absolute" type="bool">)true(</properties>)',
+                              r'\g<1>false\g<2>', text)
+                text = re.sub(r'(<Absolute type="bool">)true(</Absolute>)',
+                              r'\g<1>false\g<2>', text)
                 for source_name, absolute_paths, relative_path in replacement_groups:
                     for absolute_path in absolute_paths:
                         if absolute_path in text:

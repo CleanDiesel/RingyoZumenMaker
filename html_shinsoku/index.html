@@ -80,13 +80,50 @@
         });
       });
 
-      const mapContainer = document.getElementById("map_container");
-      const toggle = document.getElementById("map_visibility_toggle");
-      if (mapContainer && toggle) {
+      const sheets = Array.from(document.querySelectorAll(".drawing-sheet"));
+      sheets.forEach((sheet) => {
+        const mapContainer = sheet.querySelector(".map_container");
+        const toggle = sheet.querySelector(".map_visibility_toggle");
+        if (!mapContainer || !toggle) return;
         const update = () => { mapContainer.dataset.mapVisible = toggle.checked ? "1" : "0"; };
         toggle.addEventListener("change", update);
         update();
-      }
+      });
+      if (!sheets.length) return;
+      const nav = document.createElement("nav");
+      nav.className = "drawing-navigation print_hide";
+      const label = document.createElement("label");
+      label.textContent = "図面：";
+      const select = document.createElement("select");
+      select.setAttribute("aria-label", "表示する図面");
+      sheets.forEach((sheet, index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = sheet.dataset.title;
+        select.append(option);
+      });
+      label.append(select);
+      const previous = document.createElement("button");
+      previous.textContent = "前の図面";
+      const next = document.createElement("button");
+      next.textContent = "次の図面";
+      const show = (index) => {
+        select.selectedIndex = index;
+        sheets.forEach((sheet, i) => sheet.classList.toggle("active", i === index));
+        previous.disabled = index === 0;
+        next.disabled = index === sheets.length - 1;
+      };
+      select.addEventListener("change", () => show(select.selectedIndex));
+      previous.addEventListener("click", () => show(select.selectedIndex - 1));
+      next.addEventListener("click", () => show(select.selectedIndex + 1));
+      const printLabel = document.createElement("label");
+      const all = document.createElement("input");
+      all.type = "checkbox";
+      all.addEventListener("change", () => document.body.dataset.printAll = all.checked ? "1" : "0");
+      printLabel.append(all, " 全図面を印刷");
+      nav.append(previous, label, next, printLabel);
+      document.body.prepend(nav);
+      show(0);
     })();
   </script>
 </body>

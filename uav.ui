@@ -23,7 +23,7 @@
    <item>
     <widget class="QTabWidget" name="tabWidget">
      <property name="currentIndex">
-      <number>4</number>
+      <number>2</number>
      </property>
      <widget class="QWidget" name="tab">
       <property name="sizePolicy">
@@ -340,7 +340,7 @@
           </widget>
          </item>
          <item row="1" column="1">
-          <widget class="QgsFieldExpressionWidget" name="mFieldExpressionWidget_3"/>
+          <widget class="QgsFieldExpressionWidget" name="polygonFilter"/>
          </item>
          <item row="2" column="0">
           <widget class="QLabel" name="label_6">
@@ -350,7 +350,7 @@
           </widget>
          </item>
          <item row="2" column="1">
-          <widget class="QgsFieldExpressionWidget" name="mFieldExpressionWidget_4"/>
+          <widget class="QgsFieldExpressionWidget" name="polygonName"/>
          </item>
          <item row="3" column="0" colspan="2">
           <widget class="Line" name="line_6">
@@ -450,14 +450,14 @@
          <item row="5" column="1">
           <layout class="QHBoxLayout" name="horizontalLayout_3">
            <item>
-            <widget class="QLineEdit" name="lineEdit">
+            <widget class="QLineEdit" name="shichoson">
              <property name="maxLength">
               <number>20</number>
              </property>
             </widget>
            </item>
            <item>
-            <widget class="QgsPropertyOverrideButton" name="mPropertyOverrideButton_2">
+            <widget class="QgsPropertyOverrideButton" name="shichosonOverride">
              <property name="text">
               <string/>
              </property>
@@ -475,14 +475,14 @@
          <item row="6" column="1">
           <layout class="QHBoxLayout" name="horizontalLayout_4">
            <item>
-            <widget class="QSpinBox" name="spinBox">
+            <widget class="QSpinBox" name="rinpan">
              <property name="buttonSymbols">
               <enum>QAbstractSpinBox::ButtonSymbols::NoButtons</enum>
              </property>
             </widget>
            </item>
            <item>
-            <widget class="QgsPropertyOverrideButton" name="mPropertyOverrideButton_3"/>
+            <widget class="QgsPropertyOverrideButton" name="rinpanOverride"/>
            </item>
           </layout>
          </item>
@@ -496,14 +496,14 @@
          <item row="7" column="1">
           <layout class="QHBoxLayout" name="horizontalLayout_5">
            <item>
-            <widget class="QSpinBox" name="spinBox_2">
+            <widget class="QSpinBox" name="shohan">
              <property name="buttonSymbols">
               <enum>QAbstractSpinBox::ButtonSymbols::NoButtons</enum>
              </property>
             </widget>
            </item>
            <item>
-            <widget class="QgsPropertyOverrideButton" name="mPropertyOverrideButton_4"/>
+            <widget class="QgsPropertyOverrideButton" name="shohanOverride"/>
            </item>
           </layout>
          </item>
@@ -527,12 +527,12 @@
          <item row="9" column="1">
           <layout class="QHBoxLayout" name="horizontalLayout_6">
            <item>
-            <widget class="QLineEdit" name="lineEdit_2">
+            <widget class="QLineEdit" name="jigyoCode">
              <property name="inputMask">
-              <string>999;0</string>
+              <string/>
              </property>
              <property name="text">
-              <string>1</string>
+              <string>001</string>
              </property>
              <property name="maxLength">
               <number>3</number>
@@ -540,7 +540,7 @@
             </widget>
            </item>
            <item>
-            <widget class="QgsPropertyOverrideButton" name="mPropertyOverrideButton_5"/>
+            <widget class="QgsPropertyOverrideButton" name="jigyoCodeOverride"/>
            </item>
           </layout>
          </item>
@@ -574,30 +574,30 @@
             <item row="0" column="1">
              <layout class="QHBoxLayout" name="horizontalLayout_7">
               <item>
-               <widget class="QDateEdit" name="dateEdit"/>
+               <widget class="QDateEdit" name="seizubi2"/>
               </item>
               <item>
-               <widget class="QgsPropertyOverrideButton" name="mPropertyOverrideButton_6"/>
+               <widget class="QgsPropertyOverrideButton" name="seizubi2Override"/>
               </item>
              </layout>
             </item>
             <item row="1" column="1">
              <layout class="QHBoxLayout" name="horizontalLayout_8">
               <item>
-               <widget class="QLineEdit" name="lineEdit_3"/>
+               <widget class="QLineEdit" name="seizusha2"/>
               </item>
               <item>
-               <widget class="QgsPropertyOverrideButton" name="mPropertyOverrideButton_7"/>
+               <widget class="QgsPropertyOverrideButton" name="seizusha2Override"/>
               </item>
              </layout>
             </item>
             <item row="2" column="1">
              <layout class="QHBoxLayout" name="horizontalLayout_9">
               <item>
-               <widget class="QLineEdit" name="lineEdit_4"/>
+               <widget class="QLineEdit" name="sanrinshoyusha2"/>
               </item>
               <item>
-               <widget class="QgsPropertyOverrideButton" name="mPropertyOverrideButton_8"/>
+               <widget class="QgsPropertyOverrideButton" name="sanrinshoyusha2Override"/>
               </item>
              </layout>
             </item>
@@ -676,7 +676,7 @@
           </widget>
          </item>
          <item row="3" column="1">
-          <widget class="QgsFieldExpressionWidget" name="mFieldExpressionWidget"/>
+          <widget class="QgsFieldExpressionWidget" name="jochiFilter"/>
          </item>
          <item row="4" column="0">
           <widget class="QLabel" name="label_30">
@@ -713,7 +713,7 @@
           </widget>
          </item>
          <item row="7" column="1">
-          <widget class="QgsFieldExpressionWidget" name="mFieldExpressionWidget_2"/>
+          <widget class="QgsFieldExpressionWidget" name="sagyodoFilter"/>
          </item>
          <item row="8" column="0">
           <widget class="QLabel" name="label_32">
@@ -732,7 +732,7 @@
             </widget>
            </item>
            <item>
-            <widget class="QgsPropertyOverrideButton" name="mPropertyOverrideButton"/>
+            <widget class="QgsPropertyOverrideButton" name="hukuinOverride"/>
            </item>
           </layout>
          </item>
@@ -765,7 +765,7 @@
           </widget>
          </item>
          <item row="0" column="1">
-          <widget class="QgsMapLayerComboBox" name="mMapLayerComboBox"/>
+          <widget class="QgsMapLayerComboBox" name="kijunten"/>
          </item>
          <item row="1" column="0">
           <widget class="QLabel" name="label_36">
@@ -775,7 +775,7 @@
           </widget>
          </item>
          <item row="1" column="1">
-          <widget class="QgsFieldExpressionWidget" name="mFieldExpressionWidget_5"/>
+          <widget class="QgsFieldExpressionWidget" name="kijuntenExp"/>
          </item>
          <item row="3" column="0" colspan="2">
           <widget class="Line" name="line_4">
@@ -792,7 +792,7 @@
           </widget>
          </item>
          <item row="4" column="1">
-          <widget class="QgsMapLayerComboBox" name="mMapLayerComboBox_2"/>
+          <widget class="QgsMapLayerComboBox" name="olso"/>
          </item>
          <item row="2" column="0">
           <widget class="QLabel" name="label_28">
@@ -804,14 +804,14 @@
          <item row="2" column="1">
           <layout class="QHBoxLayout" name="horizontalLayout_10">
            <item>
-            <widget class="QDoubleSpinBox" name="doubleSpinBox_3">
+            <widget class="QDoubleSpinBox" name="minKijuntenkan">
              <property name="suffix">
               <string>m</string>
              </property>
             </widget>
            </item>
            <item>
-            <widget class="QgsPropertyOverrideButton" name="mPropertyOverrideButton_9"/>
+            <widget class="QgsPropertyOverrideButton" name="minKijuntenkanOverride"/>
            </item>
           </layout>
          </item>
@@ -821,133 +821,315 @@
      </widget>
      <widget class="QWidget" name="tab_4">
       <attribute name="title">
-       <string>単一図</string>
+       <string>付帯作工物</string>
       </attribute>
       <layout class="QVBoxLayout" name="verticalLayout_3">
        <item>
-        <widget class="QToolBox" name="toolBox">
-         <property name="currentIndex">
-          <number>0</number>
-         </property>
-         <widget class="QWidget" name="page_3">
-          <property name="geometry">
-           <rect>
-            <x>0</x>
-            <y>0</y>
-            <width>631</width>
-            <height>686</height>
-           </rect>
-          </property>
-          <attribute name="label">
-           <string>ポリゴン</string>
-          </attribute>
-          <layout class="QFormLayout" name="formLayout_11">
-           <item row="0" column="0">
-            <widget class="QLabel" name="label_46">
-             <property name="text">
-              <string>ポリゴンレイヤ</string>
-             </property>
-            </widget>
-           </item>
-           <item row="0" column="1">
-            <widget class="QgsMapLayerComboBox" name="mMapLayerComboBox_4"/>
-           </item>
-           <item row="1" column="0">
-            <widget class="QLabel" name="label_47">
-             <property name="text">
-              <string>フィルタ</string>
-             </property>
-            </widget>
-           </item>
-           <item row="1" column="1">
-            <widget class="QgsFieldExpressionWidget" name="mFieldExpressionWidget_8"/>
-           </item>
-           <item row="2" column="0">
-            <widget class="QLabel" name="label_48">
-             <property name="text">
-              <string>地物名</string>
-             </property>
-            </widget>
-           </item>
-           <item row="2" column="1">
-            <widget class="QgsFieldExpressionWidget" name="mFieldExpressionWidget_9"/>
-           </item>
-           <item row="3" column="0" colspan="2">
-            <widget class="Line" name="line_5">
-             <property name="orientation">
-              <enum>Qt::Orientation::Horizontal</enum>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </widget>
-         <widget class="QWidget" name="page_4">
-          <property name="geometry">
-           <rect>
-            <x>0</x>
-            <y>0</y>
-            <width>631</width>
-            <height>686</height>
-           </rect>
-          </property>
-          <attribute name="label">
-           <string>ライン</string>
-          </attribute>
-          <layout class="QFormLayout" name="formLayout_12">
-           <item row="0" column="0">
-            <widget class="QLabel" name="Label">
-             <property name="text">
-              <string>ラインレイヤ</string>
-             </property>
-            </widget>
-           </item>
-           <item row="0" column="1">
-            <widget class="QgsMapLayerComboBox" name="QgsMapLayerComboBox"/>
-           </item>
-           <item row="1" column="0">
-            <widget class="QLabel" name="Label_2">
-             <property name="text">
-              <string>フィルタ</string>
-             </property>
-            </widget>
-           </item>
-           <item row="1" column="1">
-            <widget class="QgsFieldExpressionWidget" name="QgsFieldExpressionWidget"/>
-           </item>
-           <item row="2" column="0">
-            <widget class="QLabel" name="label_50">
-             <property name="text">
-              <string>幅</string>
-             </property>
-            </widget>
-           </item>
-           <item row="2" column="1">
-            <widget class="QDoubleSpinBox" name="doubleSpinBox">
+        <layout class="QFormLayout" name="formLayout_12">
+         <item row="0" column="0">
+          <widget class="QLabel" name="Label">
+           <property name="text">
+            <string>ラインレイヤ</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QgsMapLayerComboBox" name="singleLine"/>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="Label_2">
+           <property name="text">
+            <string>フィルタ</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QgsFieldExpressionWidget" name="singleLineFilter"/>
+         </item>
+         <item row="2" column="0">
+          <widget class="QLabel" name="label_50">
+           <property name="text">
+            <string>幅</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="1">
+          <layout class="QHBoxLayout" name="singleLineWidthLayout">
+           <item>
+            <widget class="QDoubleSpinBox" name="singleLineWidth">
              <property name="suffix">
               <string>m</string>
              </property>
             </widget>
            </item>
-           <item row="3" column="0">
-            <widget class="QLabel" name="label_49">
-             <property name="text">
-              <string>地物名</string>
+           <item>
+            <widget class="QgsPropertyOverrideButton" name="singleLineWidthOverride"/>
+           </item>
+          </layout>
+         </item>
+         <item row="3" column="0">
+          <widget class="QLabel" name="label_49">
+           <property name="text">
+            <string>地物名</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="1">
+          <widget class="QgsFieldExpressionWidget" name="singleLineName"/>
+         </item>
+         <item row="4" column="0" colspan="2">
+          <widget class="Line" name="line">
+           <property name="orientation">
+            <enum>Qt::Orientation::Horizontal</enum>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="0">
+          <widget class="QLabel" name="singleLineLabel_11">
+           <property name="text">
+            <string>振興局</string>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="1">
+          <widget class="QComboBox" name="singleLineShinkokyoku">
+           <item>
+            <property name="text">
+             <string>石狩</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>胆振</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>オホーツク</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>上川</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>釧路</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>後志</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>宗谷</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>空知</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>十勝</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>根室</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>渡島</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>日高</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>檜山</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>留萌</string>
+            </property>
+           </item>
+          </widget>
+         </item>
+         <item row="6" column="0">
+          <widget class="QLabel" name="singleLineLabel_16">
+           <property name="text">
+            <string>市町村</string>
+           </property>
+          </widget>
+         </item>
+         <item row="6" column="1">
+          <layout class="QHBoxLayout" name="singleLineHorizontalLayout_3">
+           <item>
+            <widget class="QLineEdit" name="singleLineShichoson">
+             <property name="maxLength">
+              <number>20</number>
              </property>
             </widget>
            </item>
-           <item row="3" column="1">
-            <widget class="QgsFieldExpressionWidget" name="mFieldExpressionWidget_10"/>
-           </item>
-           <item row="4" column="0" colspan="2">
-            <widget class="Line" name="line">
-             <property name="orientation">
-              <enum>Qt::Orientation::Horizontal</enum>
+           <item>
+            <widget class="QgsPropertyOverrideButton" name="singleLineShichosonOverride">
+             <property name="text">
+              <string/>
              </property>
             </widget>
            </item>
           </layout>
-         </widget>
-        </widget>
+         </item>
+         <item row="7" column="0">
+          <widget class="QLabel" name="singleLineLabel_17">
+           <property name="text">
+            <string>林班</string>
+           </property>
+          </widget>
+         </item>
+         <item row="7" column="1">
+          <layout class="QHBoxLayout" name="singleLineHorizontalLayout_4">
+           <item>
+            <widget class="QSpinBox" name="singleLineRinpan">
+             <property name="buttonSymbols">
+              <enum>QAbstractSpinBox::ButtonSymbols::NoButtons</enum>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QgsPropertyOverrideButton" name="singleLineRinpanOverride"/>
+           </item>
+          </layout>
+         </item>
+         <item row="8" column="0">
+          <widget class="QLabel" name="singleLineLabel_19">
+           <property name="text">
+            <string>小班</string>
+           </property>
+          </widget>
+         </item>
+         <item row="8" column="1">
+          <layout class="QHBoxLayout" name="singleLineHorizontalLayout_5">
+           <item>
+            <widget class="QSpinBox" name="singleLineShohan">
+             <property name="buttonSymbols">
+              <enum>QAbstractSpinBox::ButtonSymbols::NoButtons</enum>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QgsPropertyOverrideButton" name="singleLineShohanOverride"/>
+           </item>
+          </layout>
+         </item>
+         <item row="9" column="0">
+          <widget class="QLabel" name="singleLineLabel_20">
+           <property name="text">
+            <string>林小班枝番</string>
+           </property>
+          </widget>
+         </item>
+         <item row="9" column="1">
+          <widget class="QgsFieldExpressionWidget" name="singleLineEdaban"/>
+         </item>
+         <item row="10" column="0">
+          <widget class="QLabel" name="singleLineLabel_25">
+           <property name="text">
+            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;事業コード&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+           </property>
+          </widget>
+         </item>
+         <item row="10" column="1">
+          <layout class="QHBoxLayout" name="singleLineHorizontalLayout_6">
+           <item>
+            <widget class="QLineEdit" name="singleLineJigyoCode">
+             <property name="inputMask">
+              <string/>
+             </property>
+             <property name="text">
+              <string>001</string>
+             </property>
+             <property name="maxLength">
+              <number>3</number>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QgsPropertyOverrideButton" name="singleLineJigyoCodeOverride"/>
+           </item>
+          </layout>
+         </item>
+         <item row="11" column="0" colspan="2">
+          <widget class="QGroupBox" name="singleLineGroupBox_2">
+           <property name="title">
+            <string>空欄で基本情報タブを継承</string>
+           </property>
+           <layout class="QFormLayout" name="singleLineFormLayout_7">
+            <item row="1" column="0">
+             <widget class="QLabel" name="singleLineLabel_21">
+              <property name="text">
+               <string>製図年月日</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="0">
+             <widget class="QLabel" name="singleLineLabel_23">
+              <property name="text">
+               <string>製図者名</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="0">
+             <widget class="QLabel" name="singleLineLabel_24">
+              <property name="text">
+               <string>森林所有者名</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <layout class="QHBoxLayout" name="singleLineHorizontalLayout_7">
+              <item>
+               <widget class="QDateEdit" name="singleLineSeizubi2"/>
+              </item>
+              <item>
+               <widget class="QgsPropertyOverrideButton" name="singleLineSeizubi2Override"/>
+              </item>
+             </layout>
+            </item>
+            <item row="2" column="1">
+             <layout class="QHBoxLayout" name="singleLineHorizontalLayout_8">
+              <item>
+               <widget class="QLineEdit" name="singleLineSeizusha2"/>
+              </item>
+              <item>
+               <widget class="QgsPropertyOverrideButton" name="singleLineSeizusha2Override"/>
+              </item>
+             </layout>
+            </item>
+            <item row="3" column="1">
+             <layout class="QHBoxLayout" name="singleLineHorizontalLayout_9">
+              <item>
+               <widget class="QLineEdit" name="singleLineSanrinshoyusha2"/>
+              </item>
+              <item>
+               <widget class="QgsPropertyOverrideButton" name="singleLineSanrinshoyusha2Override"/>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
        </item>
       </layout>
      </widget>
@@ -991,6 +1173,25 @@
            </property>
           </widget>
          </item>
+         <item row="1" column="1">
+          <widget class="QComboBox" name="isSaveConfig">
+           <item>
+            <property name="text">
+             <string>しない</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>出力フォルダに自動生成</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>ファイルを指定して生成</string>
+            </property>
+           </item>
+          </widget>
+         </item>
          <item row="2" column="0">
           <widget class="QLabel" name="label_7">
            <property name="text">
@@ -1028,50 +1229,17 @@
            </property>
           </widget>
          </item>
-         <item row="1" column="1">
-          <widget class="QComboBox" name="isSaveConfig">
-           <item>
-            <property name="text">
-             <string>しない</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>出力フォルダに自動生成</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>ファイルを指定して生成</string>
-            </property>
-           </item>
-          </widget>
-         </item>
          <item row="4" column="0">
-          <widget class="QLabel" name="label_38">
+          <widget class="QLabel" name="label_39">
            <property name="text">
-            <string>提出ファイル群作成</string>
+            <string>リネームしてコピーするオルソ画像（省略可）</string>
            </property>
           </widget>
          </item>
          <item row="4" column="1">
-          <widget class="QCheckBox" name="makeAssignment">
-           <property name="text">
-            <string>する</string>
-           </property>
-          </widget>
-         </item>
-         <item row="5" column="0">
-          <widget class="QLabel" name="label_39">
-           <property name="text">
-            <string>提出用オルソ画像</string>
-           </property>
-          </widget>
-         </item>
-         <item row="5" column="1">
           <widget class="QgsFileWidget" name="assignmentOlso">
            <property name="enabled">
-            <bool>false</bool>
+            <bool>true</bool>
            </property>
           </widget>
          </item>
@@ -1195,102 +1363,5 @@
   <tabstop>submit_bt</tabstop>
  </tabstops>
  <resources/>
- <connections>
-  <connection>
-   <sender>submit_bt</sender>
-   <signal>released()</signal>
-   <receiver>outputlog</receiver>
-   <slot>show()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>497</x>
-     <y>865</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>152</x>
-     <y>474</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>polygon</sender>
-   <signal>layerChanged(QgsMapLayer*)</signal>
-   <receiver>edaban</receiver>
-   <slot>setLayer(QgsMapLayer*)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>344</x>
-     <y>52</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>467</x>
-     <y>303</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>jochiPolygon</sender>
-   <signal>layerChanged(QgsMapLayer*)</signal>
-   <receiver>jochiName</receiver>
-   <slot>setLayer(QgsMapLayer*)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>177</x>
-     <y>102</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>283</x>
-     <y>175</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>sagyodoLine</sender>
-   <signal>layerChanged(QgsMapLayer*)</signal>
-   <receiver>jochiNameSagyodo</receiver>
-   <slot>setLayer(QgsMapLayer*)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>438</x>
-     <y>216</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>450</x>
-     <y>316</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>makeAssignment</sender>
-   <signal>toggled(bool)</signal>
-   <receiver>assignmentOlso</receiver>
-   <slot>setEnabled(bool)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>215</x>
-     <y>182</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>224</x>
-     <y>211</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>polygon</sender>
-   <signal>layerChanged(QgsMapLayer*)</signal>
-   <receiver>mFieldExpressionWidget_3</receiver>
-   <slot>setLayer(QgsMapLayer*)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>190</x>
-     <y>59</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>194</x>
-     <y>94</y>
-    </hint>
-   </hints>
-  </connection>
- </connections>
+ <connections/>
 </ui>

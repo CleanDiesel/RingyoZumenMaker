@@ -3,7 +3,6 @@ import math
 import os
 import shutil
 import tempfile
-import zipfile
 from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
 
@@ -23,17 +22,10 @@ from qgis.core import (
 )
 
 from .editable_projects import EditableProjects
+from .uav_inputs import UavInputs
 
 
 ROOT = Path(__file__).parent
-EXPRESSION_NAMES = (
-    "polygonName", "shichoson", "rinpan", "shohan", "edaban",
-    "seizubi2", "seizusha2", "sanrinshoyusha2", "jochiName", "jochiNameSagyodo", "kijuntenExp",
-)
-TEXT_NAMES = (
-    "seizujigyosha", "seizusha", "rinshohan", "sanrinshoyusha",
-    "shinseibango", "jigyoCode",
-)
 ATTRIBUTE_DEFINITIONS = (
     ("振興局", "振興局名", QVariant.String, 40, 0),
     ("市町村", "市町村名", QVariant.String, 80, 0),
@@ -49,176 +41,13 @@ ATTRIBUTE_DEFINITIONS = (
     ("申請ha", "申請合計面積", QVariant.Double, 20, 2),
     ("更新ha", "更新面積", QVariant.Double, 20, 2),
 )
+LINE_ATTRIBUTE_DEFINITIONS = ATTRIBUTE_DEFINITIONS[:-3] + (
+    ("幅m", "幅(m)", QVariant.Double, 20, 2),
+    ("延長m", "延長(m)", QVariant.LongLong, 18, 0),
+)
 
 
-class UavWorkflow:
-    def setup_uav_inputs(self):
-        for name, layer_filter in (
-            ("polygon", QgsMapLayerProxyModel.PolygonLayer),
-            ("jochiPolygon", QgsMapLayerProxyModel.PolygonLayer),
-            ("sagyodoLine", QgsMapLayerProxyModel.LineLayer),
-            ("olso", QgsMapLayerProxyModel.RasterLayer),
-            ("kijunten", QgsMapLayerProxyModel.PointLayer),
-        ):
-            combo = getattr(self, name)
-            combo.setFilters(layer_filter)
-            combo.setAllowEmptyLayer(True)
-            combo.setLayer(None)
-        for combo_name, expression_names in (
-            ("polygon", EXPRESSION_NAMES[:8]),
-            ("jochiPolygon", ("jochiName",)),
-            ("sagyodoLine", ("jochiNameSagyodo",)),
-            ("kijunten", ("kijuntenExp",)),
-        ):
-            combo = getattr(self, combo_name)
-            for name in expression_names:
-                expression_widget = getattr(self, name)
-                try:
-                    combo.layerChanged.disconnect(expression_widget.setLayer)
-                except TypeError:
-                    pass
-                expression_widget.setLayer(combo.currentLayer())
-                expression_widget.setExpression("")
-                combo.layerChanged.connect(
-                    lambda layer, field=expression_widget: self.bind_expression_layer(field, layer)
-                )
-        self.sagyodoLine.layerChanged.connect(
-            lambda layer: self.hukuin.setEnabled(layer is not None)
-        )
-        self.hukuin.setEnabled(False)
-        self.hukuin.setMaximum(10000)
-        self.hukuin.setDecimals(3)
-        self.haDecimals.setValue(2)
-        self.scale.setScale(5000)
-        self.locationScale.setScale(5000)
-        self.locationScale.setEnabled(self.isIchizu.isChecked())
-        self.isIchizu.toggled.connect(self.locationScale.setEnabled)
-        self.assignmentOlso.setFilter("オルソ画像 (*.tif *.tiff *.jpg *.jpeg *.png *.jp2 *.ecw *.img)")
-        self.assignmentOlso.setEnabled(self.makeAssignment.isChecked())
-        self.result_layers = []
-
-    @staticmethod
-    def bind_expression_layer(widget, layer):
-        # setLayerの自動選択で、任意の空欄を最初の属性名へ置き換えない。
-        expression = widget.expression()
-        widget.setLayer(layer)
-        widget.setExpression(expression)
-
-    def configuration_data(self):
-        return {
-            "format": "RingyoZumenMaker.config", "version": 3, "mode": "uav",
-            "basic": {**{name: getattr(self, name).text() for name in TEXT_NAMES},
-                      "seizubi": self.seizubi.date().toString("yyyy-MM-dd")},
-            "map": {
-                "crs": self.crs.crs().authid(), "scale": self.scale.scale(),
-                "paper": self.paper.currentText(),
-                "show_deduction": self.isJochikeisan.isChecked(),
-                "area_display_decimals": self.areaDecimals.value(),
-                "hectare_display_decimals": self.haDecimals.value(),
-                "create_location_map": self.isIchizu.isChecked(),
-                "location_direction": self.ichizuDirection.currentIndex(),
-                "location_scale": self.locationScale.scale(),
-                "minimum_exclusion_area_a": self.minJochi.value(),
-                "road_width_m": self.hukuin.value(),
-                "minimum_reference_distance_m": self.minKijuntenkan.value(),
-            },
-            "layers": {name: self.layer_reference(getattr(self, name).currentLayer())
-                       for name in ("polygon", "jochiPolygon", "sagyodoLine", "olso", "kijunten")},
-            "expressions": {name: getattr(self, name).expression() for name in EXPRESSION_NAMES},
-            "region": self.shinkokyoku.currentText(),
-            "output": {
-                "directory": self.fileName.filePath(),
-                "backup_qgz": self.backupQgz.isChecked(),
-                "config_save_mode": self.isSaveConfig.currentIndex(),
-                "config_file": self.saveConfig.filePath(),
-                "make_assignment": self.makeAssignment.isChecked(),
-                "assignment_ortho": self.assignmentOlso.filePath(),
-            },
-        }
-
-    def apply_configuration(self, data):
-        basic = data.get("basic", {})
-        legacy_names = {"seizujigyosha": "drawing_company", "seizusha": "draftsperson",
-                        "rinshohan": "forest_compartment", "sanrinshoyusha": "forest_owner"}
-        for name in TEXT_NAMES:
-            getattr(self, name).setText(self.clean_html_text(
-                basic.get(name, basic.get(legacy_names.get(name), ""))
-            ))
-        self.set_date_from_config(self.seizubi, basic.get("seizubi", basic.get("drawing_date")))
-        settings = data.get("map", {})
-        crs = QgsCoordinateReferenceSystem(settings.get("crs", ""))
-        self.crs.setCrs(crs)
-        self.scale.setScale(float(settings.get("scale") or 5000))
-        self.locationScale.setScale(float(settings.get("location_scale", settings.get("scale") or 5000)))
-        self.paper.setCurrentIndex(1 if settings.get("paper") == "A3" else 0)
-        self.isJochikeisan.setChecked(bool(settings.get("show_deduction", False)))
-        self.isIchizu.setChecked(bool(settings.get("create_location_map", False)))
-        self.ichizuDirection.setCurrentIndex(1 if settings.get("location_direction") == 1 else 0)
-        self.areaDecimals.setValue(int(settings.get("area_display_decimals", 0)))
-        self.haDecimals.setValue(int(settings.get("hectare_display_decimals", 2)))
-        self.minJochi.setValue(float(settings.get("minimum_exclusion_area_a", 1)))
-        self.hukuin.setValue(float(settings.get("road_width_m", 0)))
-        self.minKijuntenkan.setValue(int(settings.get("minimum_reference_distance_m", 20)))
-        region_index = self.shinkokyoku.findText(str(data.get("region", "")))
-        self.shinkokyoku.setCurrentIndex(max(0, region_index))
-        missing = []
-        for name in ("polygon", "jochiPolygon", "sagyodoLine", "olso", "kijunten"):
-            reference = data.get("layers", {}).get(name)
-            layer = self.resolve_layer_reference(reference)
-            getattr(self, name).setLayer(layer)
-            if reference and layer is None:
-                missing.append(reference.get("name", name))
-        for name in EXPRESSION_NAMES:
-            getattr(self, name).setExpression(self.clean_html_text(data.get("expressions", {}).get(name)))
-        output = data.get("output", {})
-        self.fileName.setFilePath(self.clean_html_text(output.get("directory")))
-        self.backupQgz.setChecked(bool(output.get("backup_qgz", False)))
-        self.makeAssignment.setChecked(bool(output.get("make_assignment", False)))
-        self.assignmentOlso.setFilePath(self.clean_html_text(output.get("assignment_ortho")))
-        mode = int(output.get("config_save_mode", 0))
-        self.isSaveConfig.setCurrentIndex(mode if mode in (0, 1, 2) else 0)
-        self.saveConfig.setFilePath(self.clean_html_text(output.get("config_file")))
-        self.update_save_config_enabled()
-        return missing
-
-    def validate_inputs(self):
-        layer = self.polygon.currentLayer()
-        if layer is None or not layer.isValid() or layer.featureCount() == 0:
-            raise ValueError("地物のあるポリゴンレイヤを指定してください")
-        crs = self.crs.crs()
-        if not crs.isValid() or crs.isGeographic() or crs.mapUnits() != Qgis.DistanceUnit.Meters:
-            raise ValueError("メートル単位の平面直角座標系などを指定してください")
-        if not math.isfinite(self.scale.scale()) or self.scale.scale() <= 0:
-            raise ValueError("有効な縮尺を指定してください")
-        if self.isIchizu.isChecked() and (
-                not math.isfinite(self.locationScale.scale()) or self.locationScale.scale() <= 0):
-            raise ValueError("位置図の有効な縮尺を指定してください")
-        if not self.fileName.filePath() or not Path(self.fileName.filePath()).is_dir():
-            raise ValueError("出力先には存在するフォルダを指定してください")
-        if self.sagyodoLine.currentLayer() and self.hukuin.value() <= 0:
-            raise ValueError("作業道幅員は0より大きい値を指定してください")
-        if self.isSaveConfig.currentIndex() == 2 and not self.saveConfig.filePath().strip():
-            raise ValueError("設定保存ファイルを指定してください")
-        if self.makeAssignment.isChecked():
-            image = Path(self.assignmentOlso.filePath())
-            if not self.assignmentOlso.filePath().strip() or not image.is_file():
-                raise ValueError("提出用オルソ画像には存在する画像ファイルを指定してください")
-            if image.suffix.lower() not in (".tif", ".tiff", ".jpg", ".jpeg", ".png", ".jp2", ".ecw", ".img"):
-                raise ValueError("提出用オルソ画像の形式を確認してください")
-        self.attribute_warnings = set()
-        for name, label in (
-            ("seizubi2", "製図年月日の個別指定（基本情報を継承）"),
-            ("seizusha2", "製図者名の個別指定（基本情報を継承）"),
-            ("sanrinshoyusha2", "森林所有者名の個別指定（基本情報を継承）"),
-            ("shichoson", "市町村"), ("rinpan", "林班"), ("shohan", "小班"),
-        ):
-            if not getattr(self, name).expression().strip():
-                self.attribute_warnings.add(label)
-        for name, label in (("jigyoCode", "事業コード"), ("shinseibango", "申請番号")):
-            if not getattr(self, name).text().strip():
-                self.attribute_warnings.add(label)
-        return True
-
+class UavWorkflow(UavInputs):
     def on_submit(self, test=False):
         self.open_output_tab()
         self.clear_output_log()
@@ -231,7 +60,11 @@ class UavWorkflow:
                 message = "次の項目は空欄です。継承または空欄のまま処理します:\n" + "\n".join(sorted(self.attribute_warnings))
                 self.append_output_log(message)
                 QMessageBox.warning(self, "入力項目の確認", message)
-            self.log_calculation()
+            for drawing in self.drawings:
+                self.activate_drawing(drawing)
+                self.append_output_log(f"【{drawing['folder']}】")
+                self.log_calculation()
+            self.activate_drawing(self.drawings[0])
             self.progressBar.setValue(40)
             if test:
                 self.append_output_log("試算完了。ファイルは生成していません。")
@@ -259,30 +92,13 @@ class UavWorkflow:
             # QGZのクローンレイヤを解放してから一時フォルダを片づける。
             if hasattr(self, "_editable_projects"):
                 self._editable_projects = None
-            for attribute in ("_output_dir_override", "_final_output_dir"):
+            for attribute in ("_output_dir_override", "_final_output_dir", "_drawing_output_dir"):
                 if hasattr(self, attribute):
                     delattr(self, attribute)
-            if staging is not None and staging.exists():
+            if (staging is not None and staging.exists() and not staging.is_symlink()
+                    and staging.name.startswith(".ringyo_zumen_tmp_")
+                    and staging.resolve().parent == Path(self.fileName.filePath()).resolve()):
                 shutil.rmtree(staging, ignore_errors=True)
-
-    def evaluate_attribute(self, widget_name, layer, feature, default=""):
-        text = getattr(self, widget_name).expression().strip()
-        if not text:
-            return default
-        expression = QgsExpression(text)
-        if expression.hasParserError():
-            raise ValueError(f"{widget_name}の式: {expression.parserErrorString()}")
-        context = QgsExpressionContext()
-        context.appendScopes(QgsExpressionContextUtils.globalProjectLayerScopes(layer))
-        context.setFeature(feature)
-        value = expression.evaluate(context)
-        if expression.hasEvalError():
-            raise ValueError(f"{layer.name()} 地物ID={feature.id()} / {widget_name}: {expression.evalErrorString()}")
-        if value is None or QgsVariantUtils.isNull(value) or self.clean_html_text(value).strip() == "":
-            if widget_name in ("shichoson", "rinpan", "shohan", "seizubi2", "seizusha2", "sanrinshoyusha2"):
-                self.attribute_warnings.add(f"地物ID={feature.id()}: {widget_name}の評価結果が空欄")
-            return default
-        return value
 
     def checked_geometry(self, layer, feature):
         geometry = QgsGeometry(feature.geometry())
@@ -323,49 +139,12 @@ class UavWorkflow:
             Decimal(1).scaleb(-decimals), rounding=ROUND_DOWN
         )
 
-    def polygon_attributes(self, layer, feature, name):
-        values = {}
-        for widget, field, default in (
-            ("shichoson", "市町村", ""), ("rinpan", "林班", None),
-            ("shohan", "小班", None), ("edaban", "枝番", ""),
-            ("seizubi2", "製図日", self.seizubi.date()),
-            ("seizusha2", "製図者", self.seizusha.text()),
-            ("sanrinshoyusha2", "所有者", self.sanrinshoyusha.text()),
-        ):
-            value = self.evaluate_attribute(widget, layer, feature, default)
-            if field in ("林班", "小班") and value is not None:
-                try:
-                    number = Decimal(str(value))
-                    if number != number.to_integral_value():
-                        raise ValueError()
-                    value = int(number)
-                    if not -2147483648 <= value <= 2147483647:
-                        raise ValueError()
-                except Exception:
-                    raise ValueError(f"地物ID={feature.id()}: {field}は整数で指定してください")
-            elif field == "製図日":
-                if not isinstance(value, QDate):
-                    value = QDate.fromString(str(value), "yyyy-MM-dd")
-                if not value.isValid():
-                    raise ValueError(f"地物ID={feature.id()}: 製図年月日は日付で指定してください")
-            else:
-                if value is not None:
-                    value = self.clean_html_text(value)
-            if value is None or (isinstance(value, str) and not value.strip()):
-                if field not in ("枝番",):
-                    self.attribute_warnings.add(f"地物ID={feature.id()}: {field}")
-            values[field] = value
-        values.update({"振興局": self.shinkokyoku.currentText(), "事業": self.jigyoCode.text(),
-                       "申請No": self.shinseibango.text(), "label": name,
-                       "source_id": feature.id()})
-        return values
-
-    def memory_polygon_layer(self, name, records, application_fields=False):
-        layer = QgsVectorLayer(f"MultiPolygon?crs={self.crs.crs().authid()}", name, "memory")
+    def memory_polygon_layer(self, name, records, application_fields=False, geometry_type="MultiPolygon"):
+        layer = QgsVectorLayer(f"{geometry_type}?crs={self.crs.crs().authid()}", name, "memory")
         fields = [QgsField("label", QVariant.String, len=254), QgsField("source_id", QVariant.LongLong)]
         if application_fields:
             fields.extend(QgsField(field, kind, len=length, prec=precision)
-                          for field, _, kind, length, precision in ATTRIBUTE_DEFINITIONS)
+                          for field, _, kind, length, precision in application_fields)
         else:
             fields.append(QgsField("area_m2", QVariant.Double))
         layer.dataProvider().addAttributes(fields)
@@ -381,7 +160,7 @@ class UavWorkflow:
             feature.setAttributes([attributes.get(field.name()) for field in layer.fields()])
             if not layer.dataProvider().addFeature(feature):
                 raise ValueError(f"{name}: 地物を作成できません")
-        for field, alias, _, _, _ in ATTRIBUTE_DEFINITIONS:
+        for field, alias, _, _, _ in application_fields or ATTRIBUTE_DEFINITIONS:
             index = layer.fields().indexFromName(field)
             if index >= 0:
                 layer.setFieldAlias(index, alias)
@@ -389,34 +168,119 @@ class UavWorkflow:
         return layer
 
     def calculate_uav(self):
+        """Build the aggregate drawing and one drawing per selected source feature."""
         self.calculate_reference_points()
-        source = self.polygon.currentLayer()
+        self.drawings = []
+        used_names = set()
         polygons = []
-        for feature in source.getFeatures():
-            geometry = self.checked_geometry(source, feature)
-            name = self.clean_html_text(self.evaluate_attribute("polygonName", source, feature)).strip()
-            polygons.append((geometry, self.polygon_attributes(source, feature, name)))
-        exclusion_sources = []
-        for combo, expression, is_road in (
-            (self.jochiPolygon, "jochiName", False),
-            (self.sagyodoLine, "jochiNameSagyodo", True),
-        ):
-            layer = combo.currentLayer()
-            if layer is None:
-                continue
-            for feature in layer.getFeatures():
-                geometry = self.checked_geometry(layer, feature)
-                if is_road:
-                    geometry = self.checked_operation(geometry.buffer(
-                        self.hukuin.value() / 2, 1,
-                        Qgis.EndCapStyle.Flat, Qgis.JoinStyle.Miter, 10,
-                    ), "作業道バッファ")
-                name = self.clean_html_text(self.evaluate_attribute(expression, layer, feature)).strip()
-                description = "・".join(filter(None, (name, f"幅{self.hukuin.value():g}m"))) if is_road else name
-                exclusion_sources.append((geometry, name, description))
+        source = self.polygon.currentLayer()
+        if source is not None:
+            for feature in self.selected_features("polygon", "polygonFilter"):
+                geometry = self.checked_geometry(source, feature)
+                name = self.clean_html_text(self.evaluate_attribute("polygonName", source, feature)).strip()
+                polygons.append((geometry, self.polygon_attributes(source, feature, name)))
+        if polygons:
+            exclusion_sources = []
+            for combo_name, filter_name, expression, is_road in (
+                ("jochiPolygon", "jochiFilter", "jochiName", False),
+                ("sagyodoLine", "sagyodoFilter", "jochiNameSagyodo", True),
+            ):
+                layer = getattr(self, combo_name).currentLayer()
+                if layer is None:
+                    continue
+                for feature in self.selected_features(combo_name, filter_name):
+                    geometry = self.checked_geometry(layer, feature)
+                    width = self.numeric_override("hukuin", layer, feature) if is_road else None
+                    if is_road:
+                        geometry = self.buffer_line(geometry, width)
+                    name = self.clean_html_text(self.evaluate_attribute(expression, layer, feature)).strip()
+                    description = "・".join(filter(None, (name, f"幅{width:g}m"))) if is_road else name
+                    line_data = (self.checked_geometry(layer, feature), width) if is_road else None
+                    exclusion_sources.append((geometry, name, description, line_data))
+            self.build_application_geometry(polygons, exclusion_sources)
+            self.remember_drawing("申請区域", self.rinshohan.text() or "全体", None, used_names)
 
+        for combo_name, is_line in (("singleLine", True),):
+            source = getattr(self, combo_name).currentLayer()
+            if source is None:
+                continue
+            for index, feature in enumerate(self.selected_features(combo_name, combo_name + "Filter"), 1):
+                geometry = self.checked_geometry(source, feature)
+                name = self.clean_html_text(self.evaluate_attribute(combo_name + "Name", source, feature)).strip()
+                attributes = self.polygon_attributes(source, feature, name, combo_name)
+                if is_line:
+                    width = self.numeric_override("singleLineWidth", source, feature)
+                    attributes.update({"幅m": width, "延長m": math.floor(geometry.length())})
+                self.build_ancillary_line(geometry, attributes)
+                self.remember_drawing("付帯作工物",
+                                      name or f"地物{index}", attributes, used_names)
+        if not self.drawings:
+            raise ValueError("施行地または付帯作工物で、少なくとも1つの対象地物を指定してください")
+        self.activate_drawing(self.drawings[0])
+
+    def build_ancillary_line(self, geometry, attributes):
+        self.work_area = self.exclusion_area = self.application_area = 0
+        self.work_terms = []
+        self.exclusion_terms = []
+        self.excluded_small_parts = []
+        self.application_layer = self.memory_polygon_layer(
+            "付帯作工物", [(geometry, attributes)], LINE_ATTRIBUTE_DEFINITIONS, "MultiLineString")
+        self.original_layer = self.application_layer
+        self.exclusion_layer = self.memory_polygon_layer("除地（なし）", [])
+        self.result_layers = [self.application_layer]
+        if self.reference_layer is not None:
+            self.result_layers.append(self.reference_layer)
+        self.apply_polygon_style(self.application_layer, "polygon.qml")
+
+    def buffer_line(self, geometry, width):
+        result = self.checked_operation(geometry.buffer(
+            width / 2, 1, Qgis.EndCapStyle.Flat, Qgis.JoinStyle.Miter, 10), "ラインバッファ")
+        if result.isEmpty() or result.isNull() or result.area() <= 0:
+            raise ValueError("ラインから幅付きポリゴンを作成できません")
+        return result
+
+    @staticmethod
+    def line_calculation_label(name, length, width):
+        length_text = f"{length:.8f}".rstrip("0").rstrip(".")
+        return "・".join(filter(None, (name, f"延長{length_text}m × 幅{width:g}m")))
+
+    def remember_drawing(self, kind, title, attributes, used_names):
+        name = self.safe_file_name(f"{kind} - {title}")
+        base = name
+        suffix = 2
+        while name.casefold() in used_names:
+            name = f"{base} ({suffix})"
+            suffix += 1
+        used_names.add(name.casefold())
+        state = {key: getattr(self, key) for key in (
+            "work_area", "exclusion_area", "application_area", "work_terms", "exclusion_terms",
+            "excluded_small_parts", "original_layer", "exclusion_layer", "application_layer",
+            "result_layers", "reference_layer", "reference_distance")}
+        state.update({"folder": name, "title": title, "kind": kind, "attributes": attributes})
+        self.drawings.append(state)
+
+    def activate_drawing(self, drawing):
+        self._current_drawing = drawing
+        for key, value in drawing.items():
+            if key not in ("folder", "title", "kind", "attributes"):
+                setattr(self, key, value)
+
+    def drawing_metadata(self):
+        drawing = self._current_drawing
+        attributes = drawing["attributes"]
+        if attributes is None:
+            return {"name": drawing["title"], "date": self.seizubi.date(),
+                    "draftsperson": self.seizusha.text(), "owner": self.sanrinshoyusha.text(),
+                    "application_no": self.shinseibango.text()}
+        compartment = "-".join(str(attributes[key]) for key in ("林班", "小班", "枝番")
+                               if attributes[key] is not None and str(attributes[key]).strip())
+        name = " ".join(filter(None, (compartment, drawing["title"])))
+        return {"name": name, "date": attributes["製図日"], "draftsperson": attributes["製図者"],
+                "owner": attributes["所有者"], "application_no": attributes["申請No"]}
+
+    def build_application_geometry(self, polygons, exclusion_sources, single=False):
         exclusions_union = self.checked_operation(
-            QgsGeometry.unaryUnion([geometry for geometry, _, _ in exclusion_sources]),
+            QgsGeometry.unaryUnion([geometry for geometry, _, _, _ in exclusion_sources]),
             "除地の重複統合",
         ) if exclusion_sources else QgsGeometry()
         accepted = []
@@ -429,10 +293,14 @@ class UavWorkflow:
             for part in self.polygon_parts(clipped):
                 names = []
                 descriptions = []
-                for exclusion_geometry, name, description in exclusion_sources:
+                for exclusion_geometry, name, description, line_data in exclusion_sources:
                     if part.intersection(exclusion_geometry).area() > 1e-8:
                         if name and name not in names:
                             names.append(name)
+                        if line_data is not None:
+                            centerline, width = line_data
+                            length = self.checked_operation(centerline.intersection(part), "除地ライン延長").length()
+                            description = self.line_calculation_label(name, length, width)
                         if description and description not in descriptions:
                             descriptions.append(description)
                 label = "・".join(names)
@@ -451,16 +319,18 @@ class UavWorkflow:
         self.exclusion_area = math.fsum(geometry.area() for geometry, _ in accepted)
         self.application_area = math.fsum(geometry.area() for geometry, _ in results)
         for geometry, attributes in results:
-            attributes.update({"面積ha": float(self.hectares(geometry.area(), 5)),
-                               "申請ha": float(self.hectares(self.application_area, 2)),
-                               "更新ha": float(self.hectares(self.work_area, 2))})
+            attributes["面積ha"] = float(self.hectares(geometry.area(), 5))
+            attributes["申請ha"] = float(self.hectares(self.application_area, 2))
+            if not single:
+                attributes["更新ha"] = float(self.hectares(self.work_area, 2))
         self.work_terms = [(attributes["label"], geometry.area()) for geometry, attributes in polygons]
         self.exclusion_terms = [(attributes["calculation_label"], geometry.area()) for geometry, attributes in accepted]
-        self.original_layer = self.memory_polygon_layer("更新区域（除去前）", [
+        self.original_layer = self.memory_polygon_layer("元区域" if single else "更新区域（除去前）", [
             (geometry, {**attributes, "area_m2": geometry.area()}) for geometry, attributes in polygons
         ])
         self.exclusion_layer = self.memory_polygon_layer("除地（採用部分）", accepted)
-        self.application_layer = self.memory_polygon_layer("申請区域（除去後）", results, True)
+        definitions = LINE_ATTRIBUTE_DEFINITIONS if single else ATTRIBUTE_DEFINITIONS
+        self.application_layer = self.memory_polygon_layer("区域" if single else "申請区域（除去後）", results, definitions)
         self.result_layers = [self.original_layer, self.exclusion_layer, self.application_layer]
         if self.reference_layer is not None:
             self.result_layers.append(self.reference_layer)
@@ -483,6 +353,7 @@ class UavWorkflow:
         if expression and (expression.hasParserError() or not expression.prepare(context)):
             raise ValueError(f"基準点指定式: {expression.parserErrorString() or expression.evalErrorString()}")
         points = []
+        thresholds = []
         for feature in source.getFeatures():
             if expression:
                 context.setFeature(feature)
@@ -491,6 +362,7 @@ class UavWorkflow:
                     raise ValueError(f"基準点 地物ID={feature.id()}: {expression.evalErrorString()}")
                 if not selected:
                     continue
+            thresholds.append(self.numeric_override("minKijuntenkan", source, feature, positive=False))
             geometry = self.checked_geometry(source, feature)
             parts = geometry.asMultiPoint() if geometry.isMultipart() else [geometry.asPoint()]
             points.extend((point, feature.id()) for point in parts)
@@ -500,9 +372,10 @@ class UavWorkflow:
             raise ValueError(f"基準点は2点必要です（選択された点数: {len(points)}）")
         self.reference_distance = math.hypot(points[1][0].x() - points[0][0].x(),
                                              points[1][0].y() - points[0][0].y())
-        if self.reference_distance < self.minKijuntenkan.value():
+        minimum = max(thresholds)
+        if self.reference_distance < minimum:
             raise ValueError(f"基準点間距離 {self.reference_distance:.6f} m は、"
-                             f"最小基準点間距離 {self.minKijuntenkan.value()} m 未満です")
+                             f"最小基準点間距離 {minimum:g} m 未満です")
         layer = QgsVectorLayer(f"Point?crs={self.crs.crs().authid()}", "基準点", "memory")
         layer.dataProvider().addAttributes([QgsField("source_id", QVariant.LongLong)])
         layer.updateFields()
@@ -521,15 +394,22 @@ class UavWorkflow:
         self.reference_layer = layer
 
     def apply_polygon_style(self, layer, filename):
-        _, ok = layer.loadNamedStyle(str(ROOT / "styles" / filename))
-        if not ok:
-            raise ValueError(f"スタイルを読み込めません: {filename}")
+        is_line = layer.geometryType() == QgsWkbTypes.LineGeometry
+        if is_line:
+            layer.setRenderer(QgsSingleSymbolRenderer(QgsLineSymbol.createSimple({
+                "line_color": "227,26,28,255", "line_width": "0.53", "line_width_unit": "MM",
+                "capstyle": "flat", "joinstyle": "miter",
+            })))
+        else:
+            _, ok = layer.loadNamedStyle(str(ROOT / "styles" / filename))
+            if not ok:
+                raise ValueError(f"スタイルを読み込めません: {filename}")
         labeling = layer.labeling()
         settings = labeling.settings() if labeling else QgsPalLayerSettings()
         settings.fieldName = "label"
         settings.isExpression = False
         settings.geometryGeneratorEnabled = False
-        settings.placement = Qgis.LabelPlacement.OutsidePolygons
+        settings.placement = Qgis.LabelPlacement.Line if is_line else Qgis.LabelPlacement.OutsidePolygons
         settings.dist = 1.5
         settings.distUnits = Qgis.RenderUnit.Millimeters
         settings.obstacleType = QgsPalLayerSettings.ObstacleType.PolygonBoundary
@@ -559,6 +439,10 @@ class UavWorkflow:
     def log_calculation(self):
         if self.reference_layer is not None:
             self.append_output_log(f"基準点: 2点 / 点間距離: {self.reference_distance:.6f} m")
+        if self._current_drawing["kind"] != "申請区域":
+            attributes = self._current_drawing["attributes"]
+            self.append_output_log(f"延長: {attributes['延長m']} m / 幅: {attributes['幅m']:.2f} m")
+            return
         for title, terms, total in (("更新面積", self.work_terms, self.work_area),
                                     ("除地", self.exclusion_terms, self.exclusion_area)):
             for name, area in terms:
@@ -584,15 +468,23 @@ class UavWorkflow:
         layout.renderContext().setDpi(300)
         return layout
 
-    def set_map_extent(self, map_item, layers, scale=None):
+    def set_map_extent(self, map_item, layers, scale=None, extent=None):
         map_item.setCrs(self.crs.crs())
         map_item.setLayers(layers)
         map_item.setKeepLayerSet(True)
-        extent = self.original_layer.extent()
-        if self.reference_layer is not None and self.reference_layer in layers:
-            extent.combineExtentWith(self.reference_layer.extent())
+        if extent is None:
+            ortho = self.olso.currentLayer()
+            if ortho is not None and any(layer.type() == ortho.type() for layer in layers):
+                extent = QgsCoordinateTransform(ortho.crs(), self.crs.crs(), QgsProject.instance()).transformBoundingBox(ortho.extent())
+            else:
+                extent = self.original_layer.extent()
+                if self.reference_layer is not None and self.reference_layer in layers:
+                    extent.combineExtentWith(self.reference_layer.extent())
         if extent.isEmpty():
-            raise ValueError("ポリゴンの表示範囲を取得できません")
+            if max(extent.width(), extent.height()) > 0:
+                extent.grow(max(extent.width(), extent.height()) * 0.001)
+            else:
+                raise ValueError("対象地物の表示範囲を取得できません")
         map_item.zoomToExtent(extent)
         map_item.setScale(self.scale.scale() if scale is None else scale)
         frame_extent = map_item.extent()
@@ -603,69 +495,92 @@ class UavWorkflow:
         if not frame_extent.contains(extent):
             self.append_output_log("指定縮尺では区域の一部が地図枠の外になります。縮尺の分母を大きくしてください。")
 
+    def drawing_output_dir(self):
+        return self._drawing_output_dir
+
+    def shared_output_dir(self):
+        return self.output_dir() / "asset"
+
     def export_uav(self):
         output = self.output_dir()
         shutil.copytree(ROOT / "html_shinsoku" / "asset", output / "asset", dirs_exist_ok=True)
-        ortho = self.olso.currentLayer()
-        layers = [self.exclusion_layer, self.application_layer]
-        if self.reference_layer is not None:
-            layers.insert(0, self.reference_layer)
-        if ortho is not None:
-            layers.append(ortho)
-        layout = self.create_uav_layout(layers)
-        exporter = QgsLayoutExporter(layout)
-        # HTML内の地図には地理参照情報は不要。レイアウトを直接画像化し、
-        # PNGへの地理参照情報追記（GDALの更新非対応）を避ける。
-        image = exporter.renderPageToImage(0, dpi=300)
-        if image.isNull() or not image.save(str(output / "asset" / "map.png"), "PNG"):
-            raise OSError("地図PNGの出力に失敗しました")
-        self._editable_projects = EditableProjects(output / "qgz")
-        self._editable_projects.capture(layout, "application", "asset/map.png", self.result_layers)
-        self.export_shapefile()
+        (output / "backup").mkdir(exist_ok=True)
+        self.shared_output_dir().mkdir(exist_ok=True)
+        sheets = []
+        copied_ortho = self.copy_assignment_ortho()
+        self._editable_projects = EditableProjects(
+            output, [copied_ortho], self.shared_output_dir(), output / "位置図/qgz", output / "asset")
+        for index, drawing in enumerate(self.drawings, 1):
+            self.activate_drawing(drawing)
+            self._drawing_output_dir = output / drawing["folder"]
+            self._drawing_output_dir.mkdir()
+            ortho = self.olso.currentLayer()
+            if ortho is not None and copied_ortho is not None and (
+                    Path(ortho.source().split('|')[0]).resolve()
+                    == Path(self.assignmentOlso.filePath()).resolve()):
+                ortho = ortho.clone()
+                ortho.setDataSource(str(copied_ortho), ortho.name(), ortho.providerType())
+                if not ortho.isValid():
+                    raise OSError("コピーしたオルソ画像を開けません")
+            layers = ([self.application_layer] if drawing["kind"] == "付帯作工物"
+                      else [self.exclusion_layer, self.application_layer])
+            if self.reference_layer is not None:
+                layers.insert(0, self.reference_layer)
+            if ortho is not None:
+                layers.append(ortho)
+            layout = self.create_uav_layout(layers)
+            image = QgsLayoutExporter(layout).renderPageToImage(0, dpi=300)
+            map_path = output / "asset" / f"drawing_{index}_map.png"
+            if image.isNull() or not image.save(str(map_path), "PNG"):
+                raise OSError("地図PNGの出力に失敗しました")
+            self._editable_projects.capture(layout, f"{drawing['folder']}/qgz/application",
+                                            f"asset/{map_path.name}", self.result_layers)
+            self.export_shapefile()
+            sheets.append(self.build_uav_html_sheet(index, map_path.name))
+        self.activate_drawing(self.drawings[0])
         if self.isIchizu.isChecked():
             self.export_location()
         self._editable_projects.save()
-        self.write_uav_html()
-        if self.makeAssignment.isChecked():
-            self.export_assignment_zip()
+        self._editable_projects = None
+        self.write_uav_html(sheets)
+        self.activate_drawing(self.drawings[0])
 
-    def export_assignment_zip(self):
-        output = self.output_dir()
-        name = self.safe_file_name(self.rinshohan.text())
-        image = Path(self.assignmentOlso.filePath())
-        archive = output / f"{name} - 提出用.zip"
-        image_name = f"{name} - オルソ{image.suffix.lower()}"
-        shp_dir = output / "shp"
-        shapefile = shp_dir / f"{name} - 申請区域.shp"
-        for suffix in (".shp", ".shx", ".dbf", ".prj"):
-            if not shapefile.with_suffix(suffix).is_file():
-                raise OSError(f"提出用シェープファイルがありません: {shapefile.with_suffix(suffix).name}")
-        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as bundle:
-            for path in sorted(shp_dir.iterdir()):
-                if path.is_file() and path.name.startswith(shapefile.stem + "."):
-                    bundle.write(path, f"shp/{path.name}")
-            bundle.write(image, image_name, compress_type=zipfile.ZIP_STORED)
-            # JPEG等の地理参照用ファイルも、画像と同じ新しい名前で同梱する。
-            for suffix in (".tfw", ".tifw", ".jgw", ".jpgw", ".pgw", ".pngw", ".wld", ".prj"):
-                sidecar = image.with_suffix(suffix)
-                if sidecar.is_file():
-                    bundle.write(sidecar, str(Path(image_name).with_suffix(suffix)))
-            for suffix in (".aux.xml", ".ovr"):
-                sidecar = Path(str(image) + suffix)
-                if sidecar.is_file():
-                    bundle.write(sidecar, image_name + suffix)
-        self.append_output_log(f"提出用ZIP: {self.displayed_output_path(archive)}")
+    def copy_assignment_ortho(self):
+        raw = self.assignmentOlso.filePath().strip()
+        if not raw:
+            return
+        image = Path(raw)
+        directory = self.output_dir() / "オルソ"
+        directory.mkdir(exist_ok=True)
+        target = directory / f"{self.safe_file_name(self.rinshohan.text() or '全体')} - オルソ{image.suffix.lower()}"
+        shutil.copy2(image, target)
+        for suffix in (".tfw", ".tifw", ".jgw", ".jpgw", ".pgw", ".pngw", ".wld", ".prj"):
+            sidecar = image.with_suffix(suffix)
+            if sidecar.is_file():
+                shutil.copy2(sidecar, target.with_suffix(suffix))
+        for suffix in (".aux.xml", ".ovr"):
+            sidecar = Path(str(image) + suffix)
+            if sidecar.is_file():
+                shutil.copy2(sidecar, Path(str(target) + suffix))
+        self.append_output_log(f"オルソ画像: {self.displayed_output_path(target)}")
+        return target
 
     def export_shapefile(self):
-        directory = self.output_dir() / "shp"
+        directory = self.drawing_output_dir() / "shp"
         directory.mkdir(parents=True, exist_ok=True)
-        filename = f"{self.safe_file_name(self.rinshohan.text())} - 申請区域.shp"
+        kind = self._current_drawing['kind']
+        filename = f"{self.safe_file_name(self._current_drawing['title'])} - {kind}.shp"
         options = QgsVectorFileWriter.SaveVectorOptions()
         options.driverName = "ESRI Shapefile"
         options.fileEncoding = "UTF-8"
+        definitions = list(ATTRIBUTE_DEFINITIONS)
+        if self._current_drawing["kind"] != "申請区域":
+            definitions = list(LINE_ATTRIBUTE_DEFINITIONS)
         options.attributes = [self.application_layer.fields().indexFromName(field)
-                              for field, _, _, _, _ in ATTRIBUTE_DEFINITIONS]
-        options.overrideGeometryType = QgsWkbTypes.MultiPolygon
+                              for field, _, _, _, _ in definitions]
+        options.overrideGeometryType = (QgsWkbTypes.MultiLineString
+                                        if self.application_layer.geometryType() == QgsWkbTypes.LineGeometry
+                                        else QgsWkbTypes.MultiPolygon)
         options.forceMulti = True
         result = QgsVectorFileWriter.writeAsVectorFormatV3(
             self.application_layer, str(directory / filename),
@@ -676,7 +591,7 @@ class UavWorkflow:
         # DBFはフィールド名が10バイトまで。正式名をQGISの別名に保持する。
         exported = QgsVectorLayer(str(directory / filename), "申請区域", "ogr")
         exported.setRenderer(self.application_layer.renderer().clone())
-        for field, alias, _, _, _ in ATTRIBUTE_DEFINITIONS:
+        for field, alias, _, _, _ in definitions:
             index = exported.fields().indexFromName(field)
             if index < 0:
                 raise OSError(f"シェープファイル属性を保存できません: {field}")
@@ -709,9 +624,7 @@ class UavWorkflow:
         self.set_location_picture_paths(layout, ROOT / "styles")
         if not self.set_location_label_text(layout):
             raise ValueError("位置図タイトルを設定できません")
-        # captureで各図面のスタイルを保存済み。同じ地物IDを維持して
-        # GeoPackageに申請区域の重複テーブルを作らない。
-        # 除去後ポリゴンの境界は除地の青線と重なるため、共有境界を赤線から除く。
+        # 全図面の除去後区域と付帯作工物を重ねた共通位置図。
         def boundary(geometry):
             geometry = QgsGeometry(geometry)
             geometry.convertToMultiType()
@@ -720,56 +633,57 @@ class UavWorkflow:
                 for polygon in geometry.asMultiPolygon() for ring in polygon
             ])
 
-        exclusion_boundaries = [boundary(feature.geometry())
-                                for feature in self.exclusion_layer.getFeatures()]
-        excluded_boundary = QgsGeometry.unaryUnion(exclusion_boundaries) if exclusion_boundaries else None
-        location_polygon = QgsVectorLayer(
-            f"MultiLineString?crs={self.crs.crs().authid()}", "位置図の区域外周", "memory")
-        location_polygon.dataProvider().addAttributes(list(self.application_layer.fields()))
-        location_polygon.updateFields()
-        for feature in self.application_layer.getFeatures():
-            outline = boundary(feature.geometry())
-            if excluded_boundary is not None:
-                outline = self.checked_operation(outline.difference(excluded_boundary), "位置図の共有境界除去")
-            if outline.isEmpty():
-                continue
-            outline.convertToMultiType()
-            line = QgsFeature(location_polygon.fields())
-            line.setGeometry(outline)
-            line.setAttributes(feature.attributes())
-            if not location_polygon.dataProvider().addFeature(line):
-                raise ValueError("位置図の区域外周を作成できません")
-        location_polygon.setRenderer(QgsSingleSymbolRenderer(QgsLineSymbol.createSimple({
-            "line_color": "227,26,28,255", "line_width": "0.53", "line_width_unit": "MM",
-            "capstyle": "flat",
-        })))
-        location_polygon.updateExtents()
-        if self.application_layer.labeling():
-            location_labels = self.application_layer.labeling().settings()
-            location_labels.placement = Qgis.LabelPlacement.Line
-            location_polygon.setLabeling(QgsVectorLayerSimpleLabeling(location_labels))
-            location_polygon.setLabelsEnabled(self.application_layer.labelsEnabled())
-        self.apply_polygon_style(self.exclusion_layer, "location_exclusion_polygon.qml")
-        self.exclusion_layer.setLabelsEnabled(False)
-        inputs = [self.polygon.currentLayer(), self.jochiPolygon.currentLayer(),
-                  self.sagyodoLine.currentLayer(), self.kijunten.currentLayer()]
+        location_layers = []
+        combined_extent = None
+        for kind, color, width in (("申請区域", "227,26,28,255", "0.53"),
+                                   ("付帯作工物", "0,80,255,255", "0.265")):
+            layer = QgsVectorLayer(
+                f"MultiLineString?crs={self.crs.crs().authid()}", f"位置図・{kind}", "memory")
+            for drawing in self.drawings:
+                if drawing["kind"] != kind:
+                    continue
+                for source_feature in drawing["application_layer"].getFeatures():
+                    if source_feature.geometry().isEmpty():
+                        continue
+                    feature = QgsFeature()
+                    feature.setGeometry(QgsGeometry(source_feature.geometry()) if kind == "付帯作工物"
+                                        else boundary(source_feature.geometry()))
+                    if not layer.dataProvider().addFeature(feature):
+                        raise ValueError("位置図の区域外周を作成できません")
+            layer.updateExtents()
+            layer.setRenderer(QgsSingleSymbolRenderer(QgsLineSymbol.createSimple({
+                "line_color": color, "line_width": width, "line_width_unit": "MM",
+                "capstyle": "flat",
+            })))
+            layer.setLabelsEnabled(False)
+            if layer.featureCount():
+                location_layers.insert(0, layer)
+                if combined_extent is None:
+                    combined_extent = layer.extent()
+                else:
+                    combined_extent.combineExtentWith(layer.extent())
+        inputs = [getattr(self, name).currentLayer() for name in
+                  ("polygon", "jochiPolygon", "sagyodoLine", "kijunten", "singleLine", "olso")]
+        generated = [layer for drawing in self.drawings for layer in drawing["result_layers"]]
         canvas = list(self.iface.mapCanvas().layers()) if self.iface else []
-        backgrounds = [layer for layer in canvas if layer not in inputs and layer not in self.result_layers]
-        ortho = self.olso.currentLayer()
-        if ortho and ortho not in backgrounds:
-            backgrounds.append(ortho)
-        self.set_map_extent(map_item, [self.exclusion_layer, location_polygon] + backgrounds,
-                            scale=self.locationScale.scale())
+        backgrounds = [layer for layer in canvas if layer not in inputs and layer not in generated]
+        # ファイル選択で指定されたコピー用オルソも位置図には含めない。
+        assigned = self.assignmentOlso.filePath().strip()
+        if assigned:
+            backgrounds = [layer for layer in backgrounds
+                           if Path(layer.source().split("|")[0]).resolve() != Path(assigned).resolve()]
+        self.set_map_extent(map_item, location_layers + backgrounds,
+                            scale=self.locationScale.scale(), extent=combined_extent)
         if not self.set_location_scale_bars(layout, map_item):
             raise ValueError("位置図の縮尺を設定できません")
-        path = self.output_dir() / f"{self.safe_file_name(self.rinshohan.text())} - 位置図.pdf"
+        directory = self.output_dir() / "位置図"
+        directory.mkdir(exist_ok=True)
+        path = directory / f"{self.safe_file_name(self.rinshohan.text() or '全体')} - 位置図.pdf"
         settings = QgsLayoutExporter.PdfExportSettings()
         if QgsLayoutExporter(layout).exportToPdf(str(path), settings) != QgsLayoutExporter.Success:
             raise OSError("位置図PDFの出力に失敗しました")
-        self._editable_projects.capture(layout, "location", path.name,
-                                        self.result_layers + [location_polygon])
-        self.apply_polygon_style(self.application_layer, "polygon.qml")
-        self.apply_polygon_style(self.exclusion_layer, "exclusion_polygon.qml")
+        self._editable_projects.capture(layout, "location", path.relative_to(self.output_dir()).as_posix(),
+                                        location_layers)
 
     def area_quantity(self, value):
         text = self.format_decimal(value, self.areaDecimals.value())
@@ -793,16 +707,17 @@ class UavWorkflow:
             parts.append(self.area_quantity(total))
         return parts
 
-    def write_uav_html(self):
+    def build_uav_html_sheet(self, index, map_filename):
         root = ET.parse(str(ROOT / "html_shinsoku" / "index.html"), ET.HTMLParser()).getroot()
         if self.reference_layer is None:
             for legend in root.xpath("//*[@id='map_legend']"):
                 legend.getparent().remove(legend)
+        metadata = self.drawing_metadata()
         for name, text in {
-            "seizubi": self.seizubi.date().toString("yyyy年MM月dd日"),
-            "seizusha": self.seizusha.text(), "seizujigyosha": self.seizujigyosha.text(),
-            "rinshohan": self.rinshohan.text(), "sanrinshoyusha": self.sanrinshoyusha.text(),
-            "shinseino": self.shinseibango.text(), "crs": self.format_crs_display(self.crs.crs()),
+            "seizubi": metadata["date"].toString("yyyy年MM月dd日"),
+            "seizusha": metadata["draftsperson"], "seizujigyosha": self.seizujigyosha.text(),
+            "rinshohan": metadata["name"], "sanrinshoyusha": metadata["owner"],
+            "shinseino": metadata["application_no"], "crs": self.format_crs_display(self.crs.crs()),
             "scale": f"1:{self.scale.scale():g}",
         }.items():
             for element in root.xpath(f"//*[@id='{name}']"):
@@ -811,17 +726,21 @@ class UavWorkflow:
             self.apply_latex_parts(element, [
                 (f"1:{self.scale.scale():g}", rf"1\mathbin{{:}}{self.scale.scale():g}"),
             ])
-        root.find("head/title").text = f"{self.rinshohan.text()} - 申請区域図"
-        body = root.find("body")
-        body.set("data-paper", self.paper.currentText())
-        width, height = (420, 297) if self.paper.currentText() == "A3" else (297, 210)
-        factor = self.paper_factor()
-        sheet_style = ET.SubElement(root.find("head"), "style")
-        sheet_style.text = (f":root{{--paper-factor:{factor};--page-width:{width}mm;--page-height:{height}mm;}}"
-                            f"@page{{size:{self.paper.currentText()} landscape;margin:0;}}")
         panel = root.xpath("//*[@id='calc_area']")[0]
         self.replace_children_with_text(panel, "")
-        if self.isJochikeisan.isChecked():
+        single = self._current_drawing["kind"] != "申請区域"
+        if single:
+            root.xpath("//h1")[0].text = "付帯作工物図"
+            root.xpath("//div[@class='calc-heading']")[0].text = "延長"
+            attributes = self._current_drawing["attributes"]
+            length = attributes["延長m"]
+            width = f"{attributes['幅m']:.2f}"
+            rows = [
+                ("地物名", [(attributes["label"], self.latex_text(attributes["label"]))]),
+                ("幅", [(f"{width} m", rf"{width}\,\mathrm{{m}}")]),
+                ("延長", [(f"{length} m", rf"\color{{red}}{{{length}\,\mathrm{{m}}}}")]),
+            ]
+        elif self.isJochikeisan.isChecked():
             rows = [("更新面積", self.area_sum_parts(self.work_terms, self.work_area)),
                     ("除地", self.area_sum_parts(self.exclusion_terms, self.exclusion_area))]
             work = self.area_quantity(self.work_area)
@@ -841,7 +760,7 @@ class UavWorkflow:
             rows = [("更新面積", [(f"{self.hectares(self.work_area, 2)} ha", rf"{self.hectares(self.work_area, 2)}\,\mathrm{{ha}}")]),
                     ("申請面積", [(f"{self.hectares(self.application_area, 2)} ha", rf"\color{{red}}{{{self.hectares(self.application_area, 2)}\,\mathrm{{ha}}}}")])]
         for title, parts in rows:
-            is_application = title == "申請面積"
+            is_application = title in ("申請面積", "面積")
             row = ET.SubElement(panel, "div", {"class": "calc-row calc-application" if is_application else "calc-row"})
             ET.SubElement(row, "div", {"class": "calc-label"}).text = title
             formula = ET.SubElement(row, "div", {"class": "calc-formula"})
@@ -861,6 +780,31 @@ class UavWorkflow:
                         pending = []
             else:
                 self.apply_latex_parts(formula, parts)
+        sheet = root.xpath("//*[@id='main_container']")[0]
+        sheet.set("class", "drawing-sheet")
+        sheet.set("data-drawing", str(index))
+        sheet.set("data-title", self._current_drawing["folder"])
+        sheet.xpath(".//img[contains(@class, 'main_map')]")[0].set("src", f"asset/{map_filename}")
+        # Classes keep the shared CSS; unique IDs prevent cross-drawing controls.
+        for element in sheet.iter():
+            if element.get("id"):
+                original_id = element.get("id")
+                element.set("class", (element.get("class", "") + " " + original_id).strip())
+                element.set("id", f"drawing_{index}_{original_id}")
+        return sheet
+
+    def write_uav_html(self, sheets):
+        root = ET.parse(str(ROOT / "html_shinsoku" / "index.html"), ET.HTMLParser()).getroot()
+        body = root.find("body")
+        body.remove(root.xpath("//*[@id='main_container']")[0])
+        for index, sheet in enumerate(sheets):
+            body.insert(index, sheet)
+        root.find("head/title").text = f"{self.rinshohan.text()} - 申請区域図"
+        body.set("data-paper", self.paper.currentText())
+        width, height = (420, 297) if self.paper.currentText() == "A3" else (297, 210)
+        style = ET.SubElement(root.find("head"), "style")
+        style.text = (f":root{{--paper-factor:{self.paper_factor()};--page-width:{width}mm;--page-height:{height}mm;}}"
+                      f"@page{{size:{self.paper.currentText()} landscape;margin:0;}}")
         path = self.output_dir() / "index.html"
         path.write_text("<!DOCTYPE html>\n" + ET.tostring(root, encoding="unicode", method="html"), encoding="utf-8")
-        self.append_output_log(f"申請区域図: {self.displayed_output_path(path)}")
+        self.append_output_log(f"申請区域図（{len(sheets)}図面）: {self.displayed_output_path(path)}")
