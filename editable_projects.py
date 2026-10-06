@@ -70,6 +70,7 @@ class EditableProjects:
             gpkg.unlink()
         sources = {}
         editable_ids = set(self.persistent_layer_ids)
+        used_table_names = set()
         # Write all data before opening any OGR readers (important on Windows).
         for _, _, _, layers in self.drawings:
             for original_id, layer in layers.items():
@@ -77,7 +78,15 @@ class EditableProjects:
                     continue
                 if not isinstance(layer, QgsVectorLayer):
                     raise RuntimeError(f"GeoPackageへ保存できないレイヤです: {layer.name()}")
-                table = f"layer_{len(sources) + 1}"
+                base = re.sub(r"[^\w]+", "_", layer.name(), flags=re.UNICODE).strip("_") or "地物"
+                if base.casefold().startswith(("gpkg_", "sqlite_")):
+                    base = "成果_" + base
+                table = base
+                suffix = 2
+                while table.casefold() in used_table_names:
+                    table = f"{base}_{suffix}"
+                    suffix += 1
+                used_table_names.add(table.casefold())
                 options = QgsVectorFileWriter.SaveVectorOptions()
                 options.driverName = "GPKG"
                 options.layerName = table

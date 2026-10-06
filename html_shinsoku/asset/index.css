@@ -44,8 +44,11 @@ h1 { text-align: center; font: 7mm 'Yu Mincho', serif; padding-top: calc(15mm * 
 .calc-application { border-top: .25mm solid #b9beb5; padding-top: 5mm; }
 .calc-formula { min-width: 0; overflow-wrap: anywhere; }
 .calc-deduction { display: flex; flex-direction: column; gap: 2mm; }
-.deduction-term { min-width: 0; }
-.deduction-term:last-child:not(:first-child) { padding-top: 1mm; }
+.deduction-term { display: grid; grid-template-columns: 1em max-content minmax(0, 1fr); gap: .4em; align-items: baseline; min-width: 0; }
+.deduction-operator, .deduction-quantity { white-space: nowrap; }
+.deduction-description { min-width: 0; overflow-wrap: anywhere; }
+.deduction-description-token { display: inline-block; max-width: 100%; }
+.deduction-total { padding-top: 1mm; }
 .latex-flow { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: baseline; gap: .15em .35em; }
 .latex-part { flex: 0 0 auto; max-width: 100%; overflow-wrap: anywhere; }
 .katex { font-size: 1em; }

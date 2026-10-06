@@ -147,6 +147,8 @@ class UavWorkflow(UavInputs):
                           for field, _, kind, length, precision in application_fields)
         else:
             fields.append(QgsField("area_m2", QVariant.Double))
+            if any("延長m" in attributes for _, attributes in records):
+                fields.append(QgsField("延長m", QVariant.LongLong))
         layer.dataProvider().addAttributes(fields)
         layer.updateFields()
         for geometry, attributes in records:
@@ -241,7 +243,7 @@ class UavWorkflow(UavInputs):
 
     @staticmethod
     def line_calculation_label(name, length, width):
-        length_text = f"{length:.8f}".rstrip("0").rstrip(".")
+        length_text = str(math.floor(length))
         return "・".join(filter(None, (name, f"延長{length_text}m × 幅{width:g}m")))
 
     def remember_drawing(self, kind, title, attributes, used_names):
@@ -252,6 +254,9 @@ class UavWorkflow(UavInputs):
             name = f"{base} ({suffix})"
             suffix += 1
         used_names.add(name.casefold())
+        for layer in self.result_layers:
+            if layer is not self.reference_layer:
+                layer.setName(f"{name} - {layer.name()}")
         state = {key: getattr(self, key) for key in (
             "work_area", "exclusion_area", "application_area", "work_terms", "exclusion_terms",
             "excluded_small_parts", "original_layer", "exclusion_layer", "application_layer",
@@ -293,6 +298,7 @@ class UavWorkflow(UavInputs):
             for part in self.polygon_parts(clipped):
                 names = []
                 descriptions = []
+                line_lengths = []
                 for exclusion_geometry, name, description, line_data in exclusion_sources:
                     if part.intersection(exclusion_geometry).area() > 1e-8:
                         if name and name not in names:
@@ -300,6 +306,7 @@ class UavWorkflow(UavInputs):
                         if line_data is not None:
                             centerline, width = line_data
                             length = self.checked_operation(centerline.intersection(part), "除地ライン延長").length()
+                            line_lengths.append(math.floor(length))
                             description = self.line_calculation_label(name, length, width)
                         if description and description not in descriptions:
                             descriptions.append(description)
@@ -310,6 +317,7 @@ class UavWorkflow(UavInputs):
                     continue
                 accepted_parts.append(part)
                 accepted.append((part, {"label": label, "source_id": attributes["source_id"],
+                                        "延長m": sum(line_lengths) if line_lengths else None,
                                         "calculation_label": "・".join(descriptions),
                                         "area_m2": part.area()}))
             removed = QgsGeometry.unaryUnion(accepted_parts) if accepted_parts else QgsGeometry()
@@ -501,6 +509,52 @@ class UavWorkflow(UavInputs):
     def shared_output_dir(self):
         return self.output_dir() / "asset"
 
+    def input_source_output_layers(self):
+        """Preserve selected input polygons and centerlines with their original attributes."""
+        layers = []
+        for combo_name, filter_name, title in (
+                ("polygon", "polygonFilter", "施行地（入力ポリゴン）"),
+                ("jochiPolygon", "jochiFilter", "除地（入力ポリゴン）"),
+                ("sagyodoLine", "sagyodoFilter", "作業道（入力ライン）"),
+                ("singleLine", "singleLineFilter", "付帯作工物（入力ライン）")):
+            source = getattr(self, combo_name).currentLayer()
+            if source is None:
+                continue
+            geometry_type = "MultiPolygon" if source.geometryType() == QgsWkbTypes.PolygonGeometry else "MultiLineString"
+            layer = QgsVectorLayer(f"{geometry_type}?crs={self.crs.crs().authid()}", title, "memory")
+            fields = list(source.fields())
+            if combo_name == "sagyodoLine":
+                length_index = source.fields().indexFromName("延長m")
+                length_field = QgsField("延長m", QVariant.LongLong)
+                if length_index >= 0:
+                    fields[length_index] = length_field
+                else:
+                    fields.append(length_field)
+            layer.dataProvider().addAttributes(fields)
+            layer.updateFields()
+            for feature in self.selected_features(combo_name, filter_name):
+                geometry = self.checked_geometry(source, feature)
+                geometry.convertToMultiType()
+                copied = QgsFeature(layer.fields())
+                copied.setGeometry(geometry)
+                values = feature.attributes()
+                if combo_name == "sagyodoLine":
+                    length = math.floor(geometry.length())
+                    if length_index >= 0:
+                        values[length_index] = length
+                    else:
+                        values.append(length)
+                copied.setAttributes(values)
+                if not layer.dataProvider().addFeature(copied):
+                    raise ValueError(f"{title}: 地物を保存できません")
+            for index in range(len(source.fields())):
+                layer.setFieldAlias(index, source.attributeAlias(index))
+            if source.renderer():
+                layer.setRenderer(source.renderer().clone())
+            layer.updateExtents()
+            layers.append(layer)
+        return layers
+
     def export_uav(self):
         output = self.output_dir()
         shutil.copytree(ROOT / "html_shinsoku" / "asset", output / "asset", dirs_exist_ok=True)
@@ -510,6 +564,7 @@ class UavWorkflow(UavInputs):
         copied_ortho = self.copy_assignment_ortho()
         self._editable_projects = EditableProjects(
             output, [copied_ortho], self.shared_output_dir(), output / "位置図/qgz", output / "asset")
+        input_sources = self.input_source_output_layers()
         for index, drawing in enumerate(self.drawings, 1):
             self.activate_drawing(drawing)
             self._drawing_output_dir = output / drawing["folder"]
@@ -534,7 +589,7 @@ class UavWorkflow(UavInputs):
             if image.isNull() or not image.save(str(map_path), "PNG"):
                 raise OSError("地図PNGの出力に失敗しました")
             self._editable_projects.capture(layout, f"{drawing['folder']}/qgz/application",
-                                            f"asset/{map_path.name}", self.result_layers)
+                                            f"asset/{map_path.name}", self.result_layers + input_sources)
             self.export_shapefile()
             sheets.append(self.build_uav_html_sheet(index, map_path.name))
         self.activate_drawing(self.drawings[0])
@@ -770,14 +825,7 @@ class UavWorkflow(UavInputs):
                 self.apply_latex_parts(result, parts[-2:] if self.isJochikeisan.isChecked() else parts)
                 ET.SubElement(row, "div", {"class": "calc-result-caption"}).text = "ヘクタール換算"
             elif title == "除地":
-                formula.set("class", "calc-formula calc-deduction")
-                pending = []
-                for part in parts:
-                    pending.append(part)
-                    if part[0] not in ("+", "=", "≃"):
-                        line = ET.SubElement(formula, "div", {"class": "deduction-term"})
-                        self.apply_latex_parts(line, pending)
-                        pending = []
+                self.render_deduction_terms(formula)
             else:
                 self.apply_latex_parts(formula, parts)
         sheet = root.xpath("//*[@id='main_container']")[0]
@@ -792,6 +840,29 @@ class UavWorkflow(UavInputs):
                 element.set("class", (element.get("class", "") + " " + original_id).strip())
                 element.set("id", f"drawing_{index}_{original_id}")
         return sheet
+
+    def render_deduction_terms(self, formula):
+        formula.set("class", "calc-formula calc-deduction")
+        terms = self.exclusion_terms or [("", self.exclusion_area)]
+        for index, (name, area) in enumerate(terms):
+            line = ET.SubElement(formula, "div", {"class": "deduction-term"})
+            operator = ET.SubElement(line, "span", {"class": "deduction-operator"})
+            self.apply_latex_parts(operator, [("+", "+")] if index else [])
+            quantity = ET.SubElement(line, "span", {"class": "deduction-quantity"})
+            self.apply_latex_parts(quantity, [self.area_quantity(area)])
+            description = ET.SubElement(line, "span", {"class": "deduction-description"})
+            if name:
+                chunks = name.replace(" × ", "・× ").split("・")
+                for chunk_index, chunk in enumerate(chunks):
+                    token = ET.SubElement(description, "span", {"class": "deduction-description-token"})
+                    token.text = ("（" if chunk_index == 0 else "") + chunk
+                    token.text += "）" if chunk_index == len(chunks) - 1 else (" " if chunks[chunk_index + 1].startswith("× ") else "・")
+        if len(terms) > 1:
+            displayed_sum = sum(Decimal(self.format_decimal(area, self.areaDecimals.value())) for _, area in terms)
+            total = Decimal(self.format_decimal(self.exclusion_area, self.areaDecimals.value()))
+            symbol = ("=", "=") if displayed_sum == total else ("≃", r"\simeq")
+            line = ET.SubElement(formula, "div", {"class": "deduction-total"})
+            self.apply_latex_parts(line, [symbol, self.area_quantity(self.exclusion_area)])
 
     def write_uav_html(self, sheets):
         root = ET.parse(str(ROOT / "html_shinsoku" / "index.html"), ET.HTMLParser()).getroot()
