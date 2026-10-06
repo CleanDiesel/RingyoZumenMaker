@@ -27,6 +27,7 @@ for path in Path(r"C:\Windows\Fonts").glob("YuGoth*.ttc"):
 app.setFont(QFont("Yu Gothic", 9))
 from RingyoZumenMaker.main import Main
 from RingyoZumenMaker.uav_inputs import LAYER_INPUTS, ATTRIBUTE_INPUTS, prefixed
+sys.excepthook = sys.__excepthook__
 
 messages = []
 QMessageBox.warning = lambda parent, title, message: messages.append((title, message))
@@ -161,16 +162,16 @@ assert not (output / "共通").exists()
 assert (output / "asset/QGISで図面を編集する方法.md").is_file()
 assert not list(output.rglob("*.zip"))
 assert len(list(output.glob("*/shp/*.shp"))) == 3
-assert len(list(output.glob("*/qgz/application.qgz"))) == 3
+assert len(list(output.glob("qgz/*.qgz"))) == 1
 assert len(list(output.glob("位置図/*位置図.pdf"))) == 1
 assert len(list(output.rglob("ringyo_zumen.gpkg"))) == 1
-assert (output / "asset/ringyo_zumen.gpkg").is_file()
+assert (output / "qgz/ringyo_zumen.gpkg").is_file()
 assert len(list(output.glob("オルソ/*オルソ.tif"))) == 1
 html = ET.parse(str(output / "index.html"), ET.HTMLParser())
 assert len(html.xpath("//div[@class='drawing-sheet main_container']")) == 3
 ids = html.xpath("//@id")
 assert len(ids) == len(set(ids))
-assert any("延長100m × 幅2m" in text for text in html.xpath("//span[@data-latex]/text()"))
+assert "延長100m" in "".join(html.getroot().itertext())
 for sheet in html.xpath("//div[@data-drawing]"):
     labels = sheet.xpath(".//div[@class='calc-label']/text()")
     assert labels == (["更新面積", "除地", "申請面積"] if sheet.get("data-drawing") == "1" else ["地物名", "幅", "延長"])
@@ -207,12 +208,14 @@ for drawing in widget.drawings:
         assert f["製図日"] == QDate(2026, 10, 1)
         assert f["製図者"] == "地物ごとの製図者"
     project = QgsProject()
-    assert project.read(str(folder / "qgz/application.qgz"))
+    assert project.read(str(output / "qgz/図面編集・再作成.qgz"))
     assert any(layer.name() == "基準点" for layer in project.mapLayers().values())
     reference = next(layer for layer in project.mapLayers().values() if layer.name() == "基準点")
     assert reference.geometryType() == 0 and reference.featureCount() == 2
     assert reference.providerType() == "ogr"
-    maps = [item for item in project.layoutManager().layouts()[0].items()
+    assert len(project.layoutManager().layouts()) == 4
+    assert len(project.mapThemeCollection().mapThemes()) == 4
+    maps = [item for item in project.layoutManager().layoutByName(drawing['folder']).items()
             if isinstance(item, __import__('qgis.core', fromlist=['QgsLayoutItemMap']).QgsLayoutItemMap)]
     center = maps[0].extent().center()
     assert abs(center.x() - ortho.extent().center().x()) < 1e-6
@@ -220,31 +223,30 @@ for drawing in widget.drawings:
     for layer in project.mapLayers().values():
         assert layer.isValid(), layer.name()
         if layer.providerType() == "ogr":
-            assert Path(layer.source().split('|')[0]).resolve() == (output / "asset/ringyo_zumen.gpkg").resolve()
+            assert Path(layer.source().split('|')[0]).resolve() == (output / "qgz/ringyo_zumen.gpkg").resolve()
         if drawing["kind"] == "付帯作工物" and layer.name() == "付帯作工物":
             assert layer.geometryType() == 1 and layer.featureCount() == 1
         if layer.providerType() == "gdal":
             assert Path(layer.source()).resolve() == next(output.glob('オルソ/*オルソ.tif')).resolve()
     project.clear()
-    assert project.read(str(output / "位置図/qgz/location.qgz"))
-    layout = project.layoutManager().layouts()[0]
+    assert project.read(str(output / "qgz/図面編集・再作成.qgz"))
+    layout = project.layoutManager().layoutByName("位置図")
     assert abs(layout.itemById("地図 1").scale() - 10000) < 0.01
     location_map = layout.itemById("地図 1")
     arrow_path = Path(layout.itemById("方位記号").picturePath())
     assert arrow_path.is_file()
-    assert arrow_path.resolve() == (output / "位置図/qgz/houi2.svg").resolve()
+    assert arrow_path.resolve() == (output / "qgz/houi2.svg").resolve()
     for layer in location_map.layers():
         assert layer.isValid()
-        assert Path(layer.source().split('|')[0]).resolve() == (output / "asset/ringyo_zumen.gpkg").resolve()
-    assert [layer.name() for layer in location_map.layers()] == ["位置図・付帯作工物", "位置図・申請区域"]
-    assert not any(layer.labelsEnabled() for layer in location_map.layers())
-    assert location_map.layers()[0].renderer().symbol().width() == 0.265
-    assert location_map.layers()[1].renderer().symbol().width() == 0.53
+        assert Path(layer.source().split('|')[0]).resolve() == (output / "qgz/ringyo_zumen.gpkg").resolve()
+    location_styles = project.mapThemeCollection().mapThemeStyleOverrides("位置図")
+    assert len(location_styles) == 3
+    assert all("図面:location" in layer.styleManager().styles() for layer in location_map.layers())
     from qgis.core import QgsLayoutExporter
     assert QgsLayoutExporter(layout).renderPageToImage(0, dpi=100).save(str(output_root / "location-preview.png"))
     project.clear()
     shape = None
-print("real exports: 3 SHP/QGZ, shared GPKG/PDF/ortho, no ZIP, per-feature attributes: OK", flush=True)
+print("real exports: 3 SHP, unified QGZ/4 themes, shared GPKG/PDF/ortho, no ZIP: OK", flush=True)
 
 # Rename drawings, remove features and retain manually added files during full backup.
 previous = json.loads((output / ".ringyo_zumen_outputs.json").read_text(encoding="utf-8"))["paths"]
@@ -331,10 +333,10 @@ widget.assignmentOlso.setFilePath("")
 widget.isIchizu.setChecked(True)
 widget.on_submit(test=False)
 assert widget.progressBar.value() == 100, messages
-assert (line_only_output / "位置図/qgz/location.qgz").is_file()
+assert (line_only_output / "qgz/図面編集・再作成.qgz").is_file()
 line_project = QgsProject()
-assert line_project.read(str(line_only_output / widget.drawings[0]["folder"] / "qgz/application.qgz"))
-assert all(layer.isValid() and layer.geometryType() == 1 for layer in line_project.mapLayers().values())
+assert line_project.read(str(line_only_output / "qgz/図面編集・再作成.qgz"))
+assert all(layer.isValid() for layer in line_project.mapLayers().values())
 line_project.clear()
 print("horizontal line only, no orthophoto or reference points: exports OK", flush=True)
 

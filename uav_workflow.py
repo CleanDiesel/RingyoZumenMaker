@@ -16,12 +16,13 @@ from qgis.core import (
     QgsExpression, QgsExpressionContext, QgsExpressionContextUtils,
     QgsFeature, QgsField, QgsGeometry, QgsLayoutExporter, QgsLayoutItemMap,
     QgsLayoutPoint, QgsLayoutSize, QgsMapLayerProxyModel, QgsPalLayerSettings,
-    QgsPrintLayout, QgsProject, QgsReadWriteContext, QgsVectorFileWriter,
+    QgsPrintLayout, QgsProject, QgsReadWriteContext, QgsVectorFileWriter, QgsMapLayerStyle, QgsFillSymbol,
     QgsLineSymbol, QgsMarkerSymbol, QgsSingleSymbolRenderer,
     QgsVariantUtils, QgsVectorLayer, QgsVectorLayerSimpleLabeling, QgsWkbTypes,
 )
 
-from .editable_projects import EditableProjects
+from .unified_project import UnifiedProjects, UID, feature_uid, source_key, metadata, checkpoint_package
+from .project_session import ProjectSession
 from .uav_inputs import UavInputs
 
 
@@ -47,13 +48,32 @@ LINE_ATTRIBUTE_DEFINITIONS = ATTRIBUTE_DEFINITIONS[:-3] + (
 )
 
 
-class UavWorkflow(UavInputs):
+class UavWorkflow(ProjectSession, UavInputs):
     def on_submit(self, test=False):
         self.open_output_tab()
         self.clear_output_log()
         self.progressBar.setValue(0)
         staging = None
+        session = None
+        closed = False
+        original_project = QgsProject.instance().fileName()
         try:
+            partial = self.outputMode.currentIndex() == 1 and not test
+            if not test and not partial and not self.settle_project_edits():
+                return
+            if partial:
+                final = Path(self.fileName.filePath())
+                if not final.is_dir():
+                    raise ValueError("存在する出力フォルダを指定してください")
+                staging = Path(tempfile.mkdtemp(prefix=".ringyo_zumen_tmp_", dir=final))
+                self._output_dir_override = staging
+                self._final_output_dir = final
+                self.export_current_results()
+                if self.commit_staged_output(staging, final, self.backupQgz.isChecked(), partial=True):
+                    self.progressBar.setValue(100)
+                return
+            session = tempfile.TemporaryDirectory(prefix="ringyo_project_")
+            self._project_snapshot = self.snapshot_project(Path(session.name) / "current.qgz")
             self.validate_inputs()
             self.calculate_uav()
             if self.attribute_warnings:
@@ -78,8 +98,43 @@ class UavWorkflow(UavInputs):
             self.progressBar.setValue(80)
             if self.isSaveConfig.currentIndex() == 1 and not self.save_config_file():
                 return
-            if not self.commit_staged_output(staging, final, self.backupQgz.isChecked()):
+            # Release OGR handles before replacing the package currently open in QGIS.
+            self._editable_projects.project.clear()
+            self._editable_projects = None
+            target_package = (final / "qgz/ringyo_zumen.gpkg").resolve()
+            references_target = any(layer.providerType() == "ogr" and
+                                    Path(layer.source().split("|")[0]).resolve() == target_package
+                                    for layer in QgsProject.instance().mapLayers().values())
+            replacing_open = bool(self._project_snapshot and
+                                  (Path(original_project).resolve().is_relative_to(final.resolve()) or references_target))
+            if replacing_open:
+                if self.backupQgz.isChecked():
+                    saved = QgsProject()
+                    backup_project = final / "qgz/図面編集・再作成.qgz"
+                    if backup_project.exists() and Path("qgz/図面編集・再作成.qgz") not in self.previous_generated_output_paths(final):
+                        raise OSError("未登録のQGZにはバックアップ用の保存を行いません。別の出力先を指定してください")
+                    if not saved.read(str(self._project_snapshot)) or not saved.write(str(backup_project)):
+                        raise OSError("バックアップ用に現在のプロジェクトを保存できません")
+                    saved.clear()
+                QgsProject.instance().clear()
+                closed = True
+                checkpoint_package(target_package)
+            def reopen_updated_project():
+                if not QgsProject.instance().read(str(final / "qgz" / "図面編集・再作成.qgz")):
+                    QgsProject.instance().clear()
+                    raise OSError("更新したプロジェクトを開けません")
+                for layer in QgsProject.instance().mapLayers().values():
+                    if layer.providerType() == "ogr" and Path(layer.source().split("|")[0]).resolve() == target_package:
+                        layer.dataProvider().reloadData()
+                        if not layer.isValid() or layer.featureCount() < 0:
+                            name = layer.name()
+                            QgsProject.instance().clear()
+                            raise OSError("更新したGPKGを読み込めません: " + name)
+            if not self.commit_staged_output(staging, final, self.backupQgz.isChecked(),
+                                             validate_commit=reopen_updated_project if closed else None):
                 return
+            if closed:
+                closed = False
             if self.isSaveConfig.currentIndex() != 1 and not self.save_config_file():
                 return
             self.append_output_log(f"出力を確定しました: {final}")
@@ -89,10 +144,16 @@ class UavWorkflow(UavInputs):
             QMessageBox.warning(self, "エラー", str(error))
             self.progressBar.setValue(0)
         finally:
+            if closed and self._project_snapshot:
+                QgsProject.instance().read(str(self._project_snapshot))
+                QgsProject.instance().setFileName(original_project)
+                self.restore_project_settings()
+            if session:
+                session.cleanup()
             # QGZのクローンレイヤを解放してから一時フォルダを片づける。
             if hasattr(self, "_editable_projects"):
                 self._editable_projects = None
-            for attribute in ("_output_dir_override", "_final_output_dir", "_drawing_output_dir"):
+            for attribute in ("_output_dir_override", "_final_output_dir", "_drawing_output_dir", "_project_snapshot", "_export_map_scale"):
                 if hasattr(self, attribute):
                     delattr(self, attribute)
             if (staging is not None and staging.exists() and not staging.is_symlink()
@@ -141,7 +202,7 @@ class UavWorkflow(UavInputs):
 
     def memory_polygon_layer(self, name, records, application_fields=False, geometry_type="MultiPolygon"):
         layer = QgsVectorLayer(f"{geometry_type}?crs={self.crs.crs().authid()}", name, "memory")
-        fields = [QgsField("label", QVariant.String, len=254), QgsField("source_id", QVariant.LongLong)]
+        fields = [QgsField("label", QVariant.String, len=254), QgsField("source_id", QVariant.LongLong), QgsField(UID, QVariant.String, len=36)]
         if application_fields:
             fields.extend(QgsField(field, kind, len=length, prec=precision)
                           for field, _, kind, length, precision in application_fields)
@@ -181,6 +242,7 @@ class UavWorkflow(UavInputs):
                 geometry = self.checked_geometry(source, feature)
                 name = self.clean_html_text(self.evaluate_attribute("polygonName", source, feature)).strip()
                 polygons.append((geometry, self.polygon_attributes(source, feature, name)))
+                polygons[-1][1][UID] = feature_uid(source, feature)
         if polygons:
             exclusion_sources = []
             for combo_name, filter_name, expression, is_road in (
@@ -210,6 +272,7 @@ class UavWorkflow(UavInputs):
                 geometry = self.checked_geometry(source, feature)
                 name = self.clean_html_text(self.evaluate_attribute(combo_name + "Name", source, feature)).strip()
                 attributes = self.polygon_attributes(source, feature, name, combo_name)
+                attributes[UID] = feature_uid(source, feature)
                 if is_line:
                     width = self.numeric_override("singleLineWidth", source, feature)
                     attributes.update({"幅m": width, "延長m": math.floor(geometry.length())})
@@ -261,7 +324,8 @@ class UavWorkflow(UavInputs):
             "work_area", "exclusion_area", "application_area", "work_terms", "exclusion_terms",
             "excluded_small_parts", "original_layer", "exclusion_layer", "application_layer",
             "result_layers", "reference_layer", "reference_distance")}
-        state.update({"folder": name, "title": title, "kind": kind, "attributes": attributes})
+        key = "aggregate" if attributes is None else "line:" + attributes[UID]
+        state.update({"folder": name, "title": title, "kind": kind, "attributes": attributes, "key": key})
         self.drawings.append(state)
 
     def activate_drawing(self, drawing):
@@ -562,9 +626,7 @@ class UavWorkflow(UavInputs):
         self.shared_output_dir().mkdir(exist_ok=True)
         sheets = []
         copied_ortho = self.copy_assignment_ortho()
-        self._editable_projects = EditableProjects(
-            output, [copied_ortho], self.shared_output_dir(), output / "位置図/qgz", output / "asset")
-        input_sources = self.input_source_output_layers()
+        self._editable_projects = UnifiedProjects(self, output, getattr(self, "_project_snapshot", None), copied_ortho)
         for index, drawing in enumerate(self.drawings, 1):
             self.activate_drawing(drawing)
             self._drawing_output_dir = output / drawing["folder"]
@@ -577,26 +639,47 @@ class UavWorkflow(UavInputs):
                 ortho.setDataSource(str(copied_ortho), ortho.name(), ortho.providerType())
                 if not ortho.isValid():
                     raise OSError("コピーしたオルソ画像を開けません")
-            layers = ([self.application_layer] if drawing["kind"] == "付帯作工物"
-                      else [self.exclusion_layer, self.application_layer])
+            layers = [self.application_layer]
             if self.reference_layer is not None:
                 layers.insert(0, self.reference_layer)
             if ortho is not None:
                 layers.append(ortho)
             layout = self.create_uav_layout(layers)
-            image = QgsLayoutExporter(layout).renderPageToImage(0, dpi=300)
             map_path = output / "asset" / f"drawing_{index}_map.png"
-            if image.isNull() or not image.save(str(map_path), "PNG"):
-                raise OSError("地図PNGの出力に失敗しました")
-            self._editable_projects.capture(layout, f"{drawing['folder']}/qgz/application",
-                                            f"asset/{map_path.name}", self.result_layers + input_sources)
+            captured = []
+            for layer in layers:
+                key = ("output:references" if layer is self.reference_layer else
+                       "output:" + drawing["key"] if layer is self.application_layer else "input:" + source_key(self.olso.currentLayer()))
+                self._editable_projects.add_dataset(key, layer)
+                style = QgsMapLayerStyle()
+                style.readFromLayer(layer)
+                captured.append((layer.id(), key, style))
+            state = {key: value for key, value in drawing.items()
+                     if key not in ("original_layer", "exclusion_layer", "application_layer", "result_layers", "reference_layer")}
+            self._editable_projects.capture(layout, drawing["key"], drawing["folder"],
+                                            f"asset/{map_path.name}", captured, state)
             self.export_shapefile()
-            sheets.append(self.build_uav_html_sheet(index, map_path.name))
         self.activate_drawing(self.drawings[0])
         if self.isIchizu.isChecked():
             self.export_location()
-        self._editable_projects.save()
-        self._editable_projects = None
+        project, info = self._editable_projects.save()
+        by_key = {drawing["key"]: drawing for drawing in self.drawings}
+        for item in info["layouts"]:
+            layout = project.layoutManager().layoutByName(item["layout"])
+            target = output / item["output"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if item["drawing"] is None:
+                if QgsLayoutExporter(layout).exportToPdf(str(target), QgsLayoutExporter.PdfExportSettings()) != QgsLayoutExporter.Success:
+                    raise OSError("位置図PDFの出力に失敗しました")
+            else:
+                with self.export_layer_context(layout):
+                    image = QgsLayoutExporter(layout).renderPageToImage(0, dpi=300)
+                if image.isNull() or not image.save(str(target), "PNG"):
+                    raise OSError("地図PNGの出力に失敗しました")
+                self.activate_drawing(by_key[item["key"]])
+                self._export_map_scale = self.layout_display_scale(layout)
+                sheets.append(self.build_uav_html_sheet(len(sheets) + 1, target.name))
+        shutil.copy2(ROOT / "qgs_editing.md", output / "asset" / "QGISで図面を編集する方法.md")
         self.write_uav_html(sheets)
         self.activate_drawing(self.drawings[0])
 
@@ -679,37 +762,16 @@ class UavWorkflow(UavInputs):
         self.set_location_picture_paths(layout, ROOT / "styles")
         if not self.set_location_label_text(layout):
             raise ValueError("位置図タイトルを設定できません")
-        # 全図面の除去後区域と付帯作工物を重ねた共通位置図。
-        def boundary(geometry):
-            geometry = QgsGeometry(geometry)
-            geometry.convertToMultiType()
-            return QgsGeometry.collectGeometry([
-                QgsGeometry.fromPolylineXY(ring)
-                for polygon in geometry.asMultiPolygon() for ring in polygon
-            ])
-
+        # Same final datasets; location-specific appearance is a named style only.
         location_layers = []
+        captured = []
         combined_extent = None
-        for kind, color, width in (("申請区域", "227,26,28,255", "0.53"),
-                                   ("付帯作工物", "0,80,255,255", "0.265")):
-            layer = QgsVectorLayer(
-                f"MultiLineString?crs={self.crs.crs().authid()}", f"位置図・{kind}", "memory")
-            for drawing in self.drawings:
-                if drawing["kind"] != kind:
-                    continue
-                for source_feature in drawing["application_layer"].getFeatures():
-                    if source_feature.geometry().isEmpty():
-                        continue
-                    feature = QgsFeature()
-                    feature.setGeometry(QgsGeometry(source_feature.geometry()) if kind == "付帯作工物"
-                                        else boundary(source_feature.geometry()))
-                    if not layer.dataProvider().addFeature(feature):
-                        raise ValueError("位置図の区域外周を作成できません")
-            layer.updateExtents()
-            layer.setRenderer(QgsSingleSymbolRenderer(QgsLineSymbol.createSimple({
-                "line_color": color, "line_width": width, "line_width_unit": "MM",
-                "capstyle": "flat",
-            })))
+        for drawing in self.drawings:
+            layer = drawing["application_layer"].clone()
+            symbol = (QgsLineSymbol.createSimple({"line_color": "0,80,255,255", "line_width": "0.265", "capstyle": "flat"})
+                      if drawing["kind"] == "付帯作工物" else
+                      QgsFillSymbol.createSimple({"style": "no", "outline_color": "227,26,28,255", "outline_width": "0.53"}))
+            layer.setRenderer(QgsSingleSymbolRenderer(symbol))
             layer.setLabelsEnabled(False)
             if layer.featureCount():
                 location_layers.insert(0, layer)
@@ -717,16 +779,34 @@ class UavWorkflow(UavInputs):
                     combined_extent = layer.extent()
                 else:
                     combined_extent.combineExtentWith(layer.extent())
+                style = QgsMapLayerStyle()
+                style.readFromLayer(layer)
+                captured.insert(0, (layer.id(), "output:" + drawing["key"], style))
         inputs = [getattr(self, name).currentLayer() for name in
                   ("polygon", "jochiPolygon", "sagyodoLine", "kijunten", "singleLine", "olso")]
         generated = [layer for drawing in self.drawings for layer in drawing["result_layers"]]
         canvas = list(self.iface.mapCanvas().layers()) if self.iface else []
-        backgrounds = [layer for layer in canvas if layer not in inputs and layer not in generated]
+        saved_datasets = (metadata(QgsProject.instance()) or {}).get("datasets", {})
+        managed = {layer_id for key, layer_id in saved_datasets.items() if not key.startswith("background:")}
+        for key, layer_id in saved_datasets.items():
+            if key.startswith("background:"):
+                layer = QgsProject.instance().mapLayer(layer_id)
+                if layer is not None and layer not in canvas:
+                    canvas.append(layer)
+        backgrounds = [layer for layer in canvas if layer not in inputs and layer not in generated
+                       and layer.providerType() != "memory" and layer.id() not in managed
+                       and (not isinstance(layer, QgsVectorLayer) or layer.featureCount() != 0)]
         # ファイル選択で指定されたコピー用オルソも位置図には含めない。
         assigned = self.assignmentOlso.filePath().strip()
         if assigned:
             backgrounds = [layer for layer in backgrounds
                            if Path(layer.source().split("|")[0]).resolve() != Path(assigned).resolve()]
+        for layer in backgrounds:
+            key = "background:" + source_key(layer)
+            self._editable_projects.add_dataset(key, layer)
+            style = QgsMapLayerStyle()
+            style.readFromLayer(layer)
+            captured.append((layer.id(), key, style))
         self.set_map_extent(map_item, location_layers + backgrounds,
                             scale=self.locationScale.scale(), extent=combined_extent)
         if not self.set_location_scale_bars(layout, map_item):
@@ -734,11 +814,7 @@ class UavWorkflow(UavInputs):
         directory = self.output_dir() / "位置図"
         directory.mkdir(exist_ok=True)
         path = directory / f"{self.safe_file_name(self.rinshohan.text() or '全体')} - 位置図.pdf"
-        settings = QgsLayoutExporter.PdfExportSettings()
-        if QgsLayoutExporter(layout).exportToPdf(str(path), settings) != QgsLayoutExporter.Success:
-            raise OSError("位置図PDFの出力に失敗しました")
-        self._editable_projects.capture(layout, "location", path.relative_to(self.output_dir()).as_posix(),
-                                        location_layers)
+        self._editable_projects.capture(layout, "location", "位置図", path.relative_to(self.output_dir()).as_posix(), captured)
 
     def area_quantity(self, value):
         text = self.format_decimal(value, self.areaDecimals.value())
@@ -763,6 +839,7 @@ class UavWorkflow(UavInputs):
         return parts
 
     def build_uav_html_sheet(self, index, map_filename):
+        displayed_scale = getattr(self, "_export_map_scale", self.scale.scale())
         root = ET.parse(str(ROOT / "html_shinsoku" / "index.html"), ET.HTMLParser()).getroot()
         if self.reference_layer is None:
             for legend in root.xpath("//*[@id='map_legend']"):
@@ -773,13 +850,13 @@ class UavWorkflow(UavInputs):
             "seizusha": metadata["draftsperson"], "seizujigyosha": self.seizujigyosha.text(),
             "rinshohan": metadata["name"], "sanrinshoyusha": metadata["owner"],
             "shinseino": metadata["application_no"], "crs": self.format_crs_display(self.crs.crs()),
-            "scale": f"1:{self.scale.scale():g}",
+            "scale": f"1:{displayed_scale:g}",
         }.items():
             for element in root.xpath(f"//*[@id='{name}']"):
                 element.text = text
         for element in root.xpath("//*[@id='scale']"):
             self.apply_latex_parts(element, [
-                (f"1:{self.scale.scale():g}", rf"1\mathbin{{:}}{self.scale.scale():g}"),
+                (f"1:{displayed_scale:g}", rf"1\mathbin{{:}}{displayed_scale:g}"),
             ])
         panel = root.xpath("//*[@id='calc_area']")[0]
         self.replace_children_with_text(panel, "")

@@ -1140,6 +1140,17 @@
       <layout class="QVBoxLayout" name="verticalLayout_7">
        <item>
         <layout class="QFormLayout" name="formLayout_3">
+         <item row="5" column="0">
+          <widget class="QLabel" name="outputModeLabel">
+           <property name="text"><string>出力方法</string></property>
+          </widget>
+         </item>
+         <item row="5" column="1">
+          <widget class="QComboBox" name="outputMode">
+           <item><property name="text"><string>再計算して図面・データを更新</string></property></item>
+           <item><property name="text"><string>現在の成果から図面・SHPを出力</string></property></item>
+          </widget>
+         </item>
          <item row="0" column="0">
           <widget class="QLabel" name="label_13">
            <property name="text">

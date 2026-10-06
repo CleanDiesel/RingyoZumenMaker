@@ -315,6 +315,7 @@ class UavInputs:
                               for prefix in ("", "singleLine")
                               for name in (prefixed(prefix, field) for field in ("seizubi2", "seizusha2", "sanrinshoyusha2"))},
             "output": {"directory": self.fileName.filePath(), "backup_generated": self.backupQgz.isChecked(),
+                       "mode": self.outputMode.currentIndex(),
                        "config_save_mode": self.isSaveConfig.currentIndex(), "config_file": self.saveConfig.filePath(),
                        "assignment_ortho": self.assignmentOlso.filePath()},
         }
@@ -382,6 +383,7 @@ class UavInputs:
                 name = prefixed(prefix, field)
                 getattr(self, name).setProperty("inheritsBasic", data.get("inherit_basic", {}).get(name, True))
         output = data.get("output", {})
+        self.outputMode.setCurrentIndex(1 if output.get("mode") == 1 else 0)
         self.fileName.setFilePath(self.clean_html_text(output.get("directory")))
         self.backupQgz.setChecked(bool(output.get("backup_generated", output.get("backup_qgz", False))))
         self.assignmentOlso.setFilePath(self.clean_html_text(output.get("assignment_ortho")))

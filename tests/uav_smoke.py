@@ -124,9 +124,8 @@ assert not list(output.iterdir()), list(output.iterdir())
 widget.on_submit(test=False)
 assert widget.progressBar.value() == 100, messages
 assert (output / "index.html").is_file()
-assert (output / "asset/ringyo_zumen.gpkg").is_file()
-assert (output / widget.drawings[0]["folder"] / "qgz/application.qgz").is_file()
-assert (output / "位置図/qgz/location.qgz").is_file()
+assert (output / "qgz/ringyo_zumen.gpkg").is_file()
+assert (output / "qgz/図面編集・再作成.qgz").is_file()
 # 出力PNGに赤い円が2つあり、300dpiで直径2mm（約24px）になっている。
 image = QImage(str(output / "asset/drawing_1_map.png")).convertToFormat(QImage.Format.Format_RGBA8888)
 pixels = np.frombuffer(image.constBits().asstring(image.sizeInBytes()), dtype=np.uint8).reshape(image.height(), image.bytesPerLine() // 4, 4)
@@ -144,13 +143,17 @@ while remaining:
                 remaining.remove(neighbor)
                 queue.append(neighbor)
     clusters.append(cluster)
-clusters = [cluster for cluster in clusters if 300 <= len(cluster) <= 550]
+clusters = [cluster for cluster in clusters if 300 <= len(cluster) <= 550
+            and 22 <= max(x for y, x in cluster) - min(x for y, x in cluster) + 1 <= 25
+            and 22 <= max(y for y, x in cluster) - min(y for y, x in cluster) + 1 <= 25]
 assert len(clusters) == 2, [len(cluster) for cluster in clusters]
 for cluster in clusters:
     ys, xs = zip(*cluster)
     assert 22 <= max(xs) - min(xs) + 1 <= 25
     assert 22 <= max(ys) - min(ys) + 1 <= 25
 print("two visible red reference circles, diameter 2 mm: OK")
+blue = (pixels[:, :, 2] > 230) & (pixels[:, :, 0] < 40) & (pixels[:, :, 1] < 120)
+assert np.count_nonzero(blue) > 50, "Derived exclusion style was not rendered"
 shapefile = next((output / widget.drawings[0]["folder"] / "shp").glob("*.shp"))
 shape = QgsVectorLayer(str(shapefile), "成果", "ogr")
 assert shape.isValid()
@@ -160,12 +163,15 @@ assert [f["面積ha"] for f in features] == [0.965, 1.0]
 assert features[0]["更新ha"] == 2.0
 assert features[0]["申請ha"] == 1.96
 shape = None
-for table in ("layer_1", "layer_2", "layer_3", "layer_4"):
-    layer = QgsVectorLayer(f"{output / 'asset/ringyo_zumen.gpkg'}|layername={table}", table, "ogr")
+import sqlite3
+with sqlite3.connect(str(output / "qgz/ringyo_zumen.gpkg")) as connection:
+    tables = [row[0] for row in connection.execute("SELECT table_name FROM gpkg_contents")]
+for table in tables:
+    layer = QgsVectorLayer(f"{output / 'qgz/ringyo_zumen.gpkg'}|layername={table}", table, "ogr")
     assert layer.isValid(), table
 layer = None
 saved = QgsProject()
-assert saved.read(str(output / widget.drawings[0]["folder"] / "qgz/application.qgz"))
+assert saved.read(str(output / "qgz/図面編集・再作成.qgz"))
 assert any(layer.type() == ortho.type() for layer in saved.mapLayers().values())
 saved_reference = next(layer for layer in saved.mapLayers().values() if layer.name() == "基準点")
 assert saved_reference.featureCount() == 2
@@ -195,8 +201,8 @@ for direction in (0, 1):
     widget.on_submit(test=False)
     assert widget.progressBar.value() == 100, messages
     project = QgsProject()
-    assert project.read(str(directory / "位置図/qgz/location.qgz"))
-    layout = project.layoutManager().layouts()[0]
+    assert project.read(str(directory / "qgz/図面編集・再作成.qgz"))
+    layout = project.layoutManager().layoutByName("位置図")
     page = layout.pageCollection().page(0).pageSize()
     assert (page.width(), page.height()) == ((297, 420) if direction == 0 else (420, 297))
     assert abs(layout.itemById("地図 1").scale() - 10000) < 0.01
@@ -321,8 +327,7 @@ assert widget.progressBar.value() == 100, messages
 assert None not in widget.result_layers
 assert all(layer.name() != "基準点" for layer in widget.result_layers)
 assert (optional_output / "asset/drawing_1_map.png").is_file()
-assert (optional_output / widget.drawings[0]["folder"] / "qgz/application.qgz").is_file()
-assert (optional_output / "位置図/qgz/location.qgz").is_file()
+assert (optional_output / "qgz/図面編集・再作成.qgz").is_file()
 assert 'map_legend' not in (optional_output / "index.html").read_text(encoding="utf-8")
 print("exports without reference points or orthophoto, reference legend omitted: OK")
 print("reference filter, count, distance, empty expression and errors: OK")

@@ -15,6 +15,7 @@ from qgis.PyQt.QtCore import QDate
 from qgis.PyQt.QtWidgets import QWidget, QDockWidget, QScrollArea, QSizePolicy, QFileDialog, QMessageBox
 from qgis.core import QgsProject, QgsLayoutItemPicture, QgsLayoutItemLabel, QgsLayoutItemScaleBar
 from .uav_workflow import UavWorkflow
+from .unified_project import checkpoint_package
 
 FORM_CLASS, _ = uic.loadUiType(str(Path(__file__).parent / "uav.ui"))
 OUTPUT_MANIFEST_NAME = ".ringyo_zumen_outputs.json"
@@ -50,6 +51,8 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
         self.isSaveConfig.currentIndexChanged.connect(self.update_save_config_enabled)
         self.setup_uav_inputs()
         self.update_save_config_enabled()
+        QgsProject.instance().readProject.connect(self.restore_project_settings)
+        self.restore_project_settings()
 
     def output_dir(self):
         if hasattr(self, "_output_dir_override"):
@@ -72,14 +75,20 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
         staging_dir,
         final_output_dir,
         backup_generated=False,
+        partial=False,
+        validate_commit=None,
     ):
         staging_dir = Path(staging_dir)
         final_output_dir = Path(final_output_dir)
+        for package in staging_dir.rglob("*.gpkg"):
+            if not package.is_symlink():
+                checkpoint_package(package)
         rollback_dir = staging_dir / ".rollback"
         staged_files = [
             path
             for path in staging_dir.rglob("*")
             if path.is_file() and rollback_dir not in path.parents
+            and not path.name.endswith((".gpkg-wal", ".gpkg-shm", ".gpkg-journal"))
             and path != staging_dir / OUTPUT_MANIFEST_NAME
         ]
         current_paths = {
@@ -93,7 +102,9 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
             if self.safe_generated_output_file(final_output_dir, path) is not None
         }
 
-        manifest_paths = current_paths
+        manifest_paths = current_paths | previous_paths if partial else current_paths
+        if partial:
+            previous_existing_paths &= current_paths
         manifest_source = staging_dir / OUTPUT_MANIFEST_NAME
         self.write_output_manifest(manifest_source, manifest_paths)
         staged_files.append(manifest_source)
@@ -173,6 +184,8 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
                 committed.append(record)
                 os.replace(source_path, target_path)
                 record["installed"] = True
+            if validate_commit is not None:
+                validate_commit()
         except OSError as e:
             for record in reversed(committed):
                 target_path = record["target"]
