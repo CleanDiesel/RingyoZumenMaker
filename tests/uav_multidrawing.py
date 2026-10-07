@@ -309,6 +309,7 @@ widget.activate_drawing(widget.drawings[-1])
 widget.isJochikeisan.setChecked(False)
 sheet = widget.build_uav_html_sheet(1, "test.png")
 assert sheet.xpath(".//div[@class='calc-label']/text()") == ["地物名", "幅", "延長"]
+assert len(sheet.xpath(".//div[contains(concat(' ', normalize-space(@class), ' '), ' calc-result ')]")) == 1
 assert "120 m" in "".join(sheet.itertext())
 assert "ha" not in "".join(sheet.xpath(".//div[contains(@class, 'calc_area')]")[0].itertext())
 print("invalid override rejected, aggregate filters, single direct area display: OK", flush=True)

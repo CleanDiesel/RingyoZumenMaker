@@ -904,6 +904,8 @@ class UavWorkflow(ProjectSession, UavInputs):
             elif title == "除地":
                 self.render_deduction_terms(formula)
             else:
+                if single and title == "延長":
+                    formula.set("class", "calc-formula calc-result")
                 self.apply_latex_parts(formula, parts)
         sheet = root.xpath("//*[@id='main_container']")[0]
         sheet.set("class", "drawing-sheet")
