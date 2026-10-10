@@ -31,10 +31,11 @@ for path in Path(r"C:\Windows\Fonts").glob("YuGoth*.ttc"):
 app.setFont(QFont("Yu Gothic", 9))
 
 from RingyoZumenMaker.main import Main
+from RingyoZumenMaker.unified_project import metadata
 
 messages = []
 QMessageBox.warning = lambda parent, title, message: messages.append((title, message))
-QA_ROOT = Path(r"C:\Users\m48c7\.codex\visualizations\2026\10\02\01a0fbf6-df38-7290-81f4-3c5a903d47a0")
+QA_ROOT = Path(os.environ.get("QGIS_TEST_OUTPUT_DIR", tempfile.gettempdir()))
 output_root = Path(tempfile.mkdtemp(prefix="uav-qa-", dir=QA_ROOT))
 
 
@@ -76,6 +77,7 @@ ortho = QgsRasterLayer(str(ortho_path), "オルソ")
 QgsProject.instance().addMapLayer(ortho)
 
 widget = Main()
+assert not widget.locationPaper.isEnabled()
 widget.crs.setCrs(QgsCoordinateReferenceSystem("EPSG:6678"))
 widget.polygon.setLayer(polygons)
 widget.jochiPolygon.setLayer(exclusions)
@@ -92,14 +94,15 @@ widget.hukuin.setValue(2)
 widget.minJochi.setValue(1)
 widget.scale.setScale(2000)
 widget.locationScale.setScale(10000)
-widget.rinshohan.setText("12-60林班")
+assert not hasattr(widget, "rinshohan")
 widget.shinseibango.setText("123-01")
-widget.seizusha.setText("製図者")
-widget.sanrinshoyusha.setText("所有者")
+widget.seizusha2.setText("製図者")
+widget.sanrinshoyusha2.setText("所有者")
 widget.isSaveConfig.setCurrentIndex(1)
 widget.isIchizu.setChecked(True)
+assert widget.locationPaper.isEnabled()
 widget.isJochikeisan.setChecked(True)
-widget.seizubi.setDate(__import__('qgis.PyQt.QtCore', fromlist=['QDate']).QDate(2026, 10, 2))
+widget.seizubi2.setDate(__import__('qgis.PyQt.QtCore', fromlist=['QDate']).QDate(2026, 10, 2))
 
 output = output_root / "A4"
 output.mkdir()
@@ -125,7 +128,7 @@ widget.on_submit(test=False)
 assert widget.progressBar.value() == 100, messages
 assert (output / "index.html").is_file()
 assert (output / "qgz/ringyo_zumen.gpkg").is_file()
-assert (output / "qgz/図面編集・再作成.qgz").is_file()
+assert (output / "qgz" / widget.project_file_name()).is_file()
 # 出力PNGに赤い円が2つあり、300dpiで直径2mm（約24px）になっている。
 image = QImage(str(output / "asset/drawing_1_map.png")).convertToFormat(QImage.Format.Format_RGBA8888)
 pixels = np.frombuffer(image.constBits().asstring(image.sizeInBytes()), dtype=np.uint8).reshape(image.height(), image.bytesPerLine() // 4, 4)
@@ -171,7 +174,7 @@ for table in tables:
     assert layer.isValid(), table
 layer = None
 saved = QgsProject()
-assert saved.read(str(output / "qgz/図面編集・再作成.qgz"))
+assert saved.read(str(output / "qgz" / widget.project_file_name()))
 assert any(layer.type() == ortho.type() for layer in saved.mapLayers().values())
 saved_reference = next(layer for layer in saved.mapLayers().values() if layer.name() == "基準点")
 assert saved_reference.featureCount() == 2
@@ -179,48 +182,62 @@ assert saved_reference.renderer().symbol().size() == 2
 saved.clear()
 print("trial, shapefile hectares, GPKG layers, QGZ ortho: OK")
 
+widget.locationPaper.setCurrentText("A3")
 data = widget.configuration_data()
+assert data["map"]["paper"] == "A4"
+assert data["map"]["location_paper"] == "A3"
+assert "basic" not in data
 assert data["map"]["location_scale"] == 10000
 widget.locationScale.setScale(5000)
+widget.locationPaper.setCurrentText("A4")
 widget.polygon.setLayer(None)
 widget.apply_configuration(data)
+assert "basic" not in widget.configuration_data()
+assert widget.drawing_metadata()["name"] == "12林班60小班"
 assert widget.locationScale.scale() == 10000
+assert widget.paper.currentText() == "A4"
+assert widget.locationPaper.currentText() == "A3"
 assert widget.polygon.currentLayer() == polygons
 assert widget.polygonName.expression() == '"name"'
 assert widget.kijunten.currentLayer() == reference_points
 assert widget.kijuntenExp.expression() == '"name" IN (\'K1\', \'K2\')'
 assert widget.minKijuntenkan.value() == 20
 
-for direction in (0, 1):
-    directory = output_root / f"A3-{direction}"
+for drawing_paper, location_paper, direction in (("A3", "A4", 0), ("A4", "A3", 0),
+                                                ("A3", "A4", 1), ("A4", "A3", 1)):
+    directory = output_root / f"{drawing_paper}-{location_paper}-{direction}"
     directory.mkdir()
     widget.fileName.setFilePath(str(directory))
-    widget.paper.setCurrentIndex(1)
+    widget.paper.setCurrentText(drawing_paper)
+    widget.locationPaper.setCurrentText(location_paper)
     widget.ichizuDirection.setCurrentIndex(direction)
     widget.isJochikeisan.setChecked(direction == 0)
     widget.on_submit(test=False)
     assert widget.progressBar.value() == 100, messages
     project = QgsProject()
-    assert project.read(str(directory / "qgz/図面編集・再作成.qgz"))
+    assert project.read(str(directory / "qgz" / widget.project_file_name()))
     layout = project.layoutManager().layoutByName("位置図")
     page = layout.pageCollection().page(0).pageSize()
-    assert (page.width(), page.height()) == ((297, 420) if direction == 0 else (420, 297))
+    expected_page = (297, 420) if location_paper == "A3" else (210, 297)
+    assert (page.width(), page.height()) == (expected_page if direction == 0 else expected_page[::-1])
     assert abs(layout.itemById("地図 1").scale() - 10000) < 0.01
-    print("A3", direction, "location page/scale", page.width(), page.height())
+    assert f'data-paper="{drawing_paper}"' in (directory / "index.html").read_text(encoding="utf-8")
+    config = metadata(project)["config"]["map"]
+    assert config["paper"] == drawing_paper and config["location_paper"] == location_paper
+    print(drawing_paper, location_paper, direction, "independent paper sizes", page.width(), page.height())
     project.clear()
 
-# 旧名のshp関連ファイルも次回の生成物バックアップへ入る。
-directory = output_root / "A3-1"
+# 基本情報の林小班がなくても、前回の生成物をバックアップする。
+directory = output_root / "A4-A3-1"
 (directory / "user-note.txt").write_text("手動追加", encoding="utf-8")
-widget.rinshohan.setText("新名称")
 widget.backupQgz.setChecked(True)
 widget.on_submit(test=False)
 assert widget.progressBar.value() == 100, messages
 assert (directory / "user-note.txt").is_file()
 batch = next((directory / "backup").iterdir())
-assert list((batch / "申請区域 - 12-60林班" / "shp").glob("12-60林班*.shp"))
-assert list(directory.glob("位置図/新名称 - 位置図.pdf"))
-print("backup filename change and manual file preservation: OK")
+assert list((batch / "申請区域 - 全体" / "shp").glob("全体*.shp"))
+assert (directory / "位置図/位置図.pdf").is_file()
+print("backup and manual file preservation without basic compartment: OK")
 
 invalid = vector("ねじれ", "MultiPolygon", [("ねじれ", "MULTIPOLYGON(((0 0,100 100,100 0,0 100,0 0)))")])
 widget.polygon.setLayer(invalid)
@@ -327,7 +344,7 @@ assert widget.progressBar.value() == 100, messages
 assert None not in widget.result_layers
 assert all(layer.name() != "基準点" for layer in widget.result_layers)
 assert (optional_output / "asset/drawing_1_map.png").is_file()
-assert (optional_output / "qgz/図面編集・再作成.qgz").is_file()
+assert (optional_output / "qgz" / widget.project_file_name()).is_file()
 assert 'map_legend' not in (optional_output / "index.html").read_text(encoding="utf-8")
 print("exports without reference points or orthophoto, reference legend omitted: OK")
 print("reference filter, count, distance, empty expression and errors: OK")

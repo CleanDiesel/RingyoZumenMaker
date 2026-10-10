@@ -9,7 +9,7 @@ body { color: #000; background: #fff; }
 .main_container { width: var(--page-width); min-height: var(--page-height); }
 h1 { text-align: center; font: 7mm 'Yu Mincho', serif; padding-top: calc(15mm * var(--paper-factor)); }
 .info_container {
-  width: calc(240mm * var(--paper-factor)); min-height: calc(17mm * var(--paper-factor));
+  width: calc(240mm * var(--paper-factor)); height: calc(17mm * var(--paper-factor));
   font: 3mm 'Yu Mincho', serif; display: grid;
   grid-template-columns: 1fr 1.5fr 2fr 1.5fr;
   border: .7mm solid black; margin: 0 auto;
@@ -17,7 +17,15 @@ h1 { text-align: center; font: 7mm 'Yu Mincho', serif; padding-top: calc(15mm * 
 .info_container > div { border-right: .4mm solid black; display: flex; flex-direction: column; min-width: 0; }
 .info_container > div:last-child { border-right: none; }
 .info_container .description { padding: .5mm; }
-.info_container .value { text-align: center; flex: 1; display: flex; justify-content: center; flex-direction: column; overflow-wrap: anywhere; }
+.info_container .value { text-align: center; flex: 1; min-height: 0; min-width: 0; display: flex; justify-content: center; flex-direction: column; overflow: hidden; }
+.info_container .value1, .info_container .value2 { flex: 1; min-height: 0; min-width: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.info_container .header-text {
+  width: 100%; padding: 0 .6mm; line-height: 3.6mm;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  max-height: 7.2mm; overflow: hidden; overflow-wrap: anywhere;
+}
+.info_container .seizujigyosha .header-text, .info_container .seizusha .header-text { -webkit-line-clamp: 1; max-height: 3.6mm; }
+.info_container .seizubi .header-text { word-break: keep-all; }
 .sub_container {
   width: calc(240mm * var(--paper-factor)); min-height: calc(158mm * var(--paper-factor));
   margin: calc(3mm * var(--paper-factor)) auto 0; display: flex; justify-content: space-between;

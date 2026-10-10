@@ -18,7 +18,7 @@ from .uav_workflow import UavWorkflow
 from .unified_project import checkpoint_package
 
 FORM_CLASS, _ = uic.loadUiType(str(Path(__file__).parent / "uav.ui"))
-OUTPUT_MANIFEST_NAME = ".ringyo_zumen_outputs.json"
+OUTPUT_DIRECTORIES = ("asset", "qgz", "位置図", "オルソ", "申請区域 - 全体", "付帯作工物")
 
 
 class Main(UavWorkflow, QDockWidget, FORM_CLASS):
@@ -75,8 +75,8 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
         staging_dir,
         final_output_dir,
         backup_generated=False,
-        partial=False,
         validate_commit=None,
+        preserve_projects=False,
     ):
         staging_dir = Path(staging_dir)
         final_output_dir = Path(final_output_dir)
@@ -89,34 +89,32 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
             for path in staging_dir.rglob("*")
             if path.is_file() and rollback_dir not in path.parents
             and not path.name.endswith((".gpkg-wal", ".gpkg-shm", ".gpkg-journal"))
-            and path != staging_dir / OUTPUT_MANIFEST_NAME
         ]
         current_paths = {
             path.relative_to(staging_dir)
             for path in staged_files
-            if path.name != OUTPUT_MANIFEST_NAME
         }
-        previous_paths = self.previous_generated_output_paths(final_output_dir)
+        previous_paths = self.output_target_paths(final_output_dir)
         previous_existing_paths = {
             path for path in previous_paths
-            if self.safe_generated_output_file(final_output_dir, path) is not None
+            if self.safe_output_file(final_output_dir, path) is not None
         }
 
-        manifest_paths = current_paths | previous_paths if partial else current_paths
-        if partial:
-            previous_existing_paths &= current_paths
-        manifest_source = staging_dir / OUTPUT_MANIFEST_NAME
-        self.write_output_manifest(manifest_source, manifest_paths)
-        staged_files.append(manifest_source)
+        preserved_paths = {path for path in previous_paths
+                           if preserve_projects and (path.parts[0].casefold() == "qgz" or
+                               path.suffix.lower() in (".qgz", ".qgs", ".qgd", ".gpkg"))}
+        if preserve_projects:
+            preserved_paths |= previous_paths & getattr(self, "_retained_output_paths", set())
+        previous_existing_paths -= preserved_paths
 
-        # Never overwrite a user-added file which was not recorded as generated.
+        # Only the named output folders and files may be replaced.
         for relative_path in current_paths:
             target_path = final_output_dir / relative_path
             if target_path.is_symlink() or not target_path.resolve().is_relative_to(final_output_dir.resolve()):
                 QMessageBox.warning(self, "エラー", f"出力先のリンクが出力フォルダ外を指しています:\n{target_path}")
                 return False
             if target_path.exists() and relative_path not in previous_existing_paths:
-                QMessageBox.warning(self, "エラー", f"生成対象と同名の未登録ファイルがあります。退避してください:\n{target_path}")
+                QMessageBox.warning(self, "エラー", f"出力対象外の同名ファイルがあります。退避してください:\n{target_path}")
                 return False
 
         backup_batch_dir = None
@@ -128,7 +126,7 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
                 # 成功するまで一時退避し、失敗時は前回の成果を復元する。
                 for relative_path in sorted(previous_existing_paths - current_paths,
                                             key=lambda path: path.as_posix()):
-                    source_path = self.safe_generated_output_file(final_output_dir, relative_path)
+                    source_path = self.safe_output_file(final_output_dir, relative_path)
                     if source_path is None:
                         continue
                     retired_path = rollback_dir / relative_path
@@ -148,7 +146,7 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
                     previous_existing_paths,
                     key=lambda path: path.as_posix(),
                 ):
-                    source_path = self.safe_generated_output_file(
+                    source_path = self.safe_output_file(
                         final_output_dir,
                         relative_path,
                     )
@@ -158,12 +156,6 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
                     backup_path.parent.mkdir(parents=True, exist_ok=True)
                     os.replace(source_path, backup_path)
                     backed_up.append((source_path, backup_path))
-
-                previous_manifest = final_output_dir / OUTPUT_MANIFEST_NAME
-                if previous_manifest.is_file():
-                    backup_path = backup_batch_dir / OUTPUT_MANIFEST_NAME
-                    os.replace(previous_manifest, backup_path)
-                    backed_up.append((previous_manifest, backup_path))
 
             for source_path in staged_files:
                 relative_path = source_path.relative_to(staging_dir)
@@ -226,85 +218,32 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
         self.remove_empty_generated_directories(final_output_dir, previous_existing_paths)
         if backup_batch_dir is not None:
             self.append_output_log(
-                f"以前の生成ファイルをバックアップしました: {backup_batch_dir}"
+                f"出力フォルダの対象ファイルをバックアップしました: {backup_batch_dir}"
             )
         elif previous_existing_paths - current_paths:
-            self.append_output_log("今回使わない前回の生成ファイルを破棄しました（バックアップなし）。")
+            self.append_output_log("今回使わない出力対象ファイルを削除しました（バックアップなし）。")
 
         (final_output_dir / "backup").mkdir(exist_ok=True)
 
         return True
 
-    def previous_generated_output_paths(self, output_dir):
-        output_dir = Path(output_dir)
-        manifest_path = output_dir / OUTPUT_MANIFEST_NAME
-        try:
-            with open(manifest_path, "r", encoding="utf-8") as manifest_file:
-                data = json.load(manifest_file)
-            if (
-                isinstance(data, dict)
-                and data.get("format") == "RingyoZumenMaker.outputs"
-                and isinstance(data.get("paths"), list)
-            ):
-                return {
-                    normalized
-                    for value in data["paths"]
-                    if (normalized := self.normalized_generated_output_path(value))
-                    is not None
-                }
-        except (OSError, UnicodeError, json.JSONDecodeError):
-            pass
-
-        return self.legacy_generated_output_paths(output_dir)
-
-    def legacy_generated_output_paths(self, output_dir):
+    def output_target_paths(self, output_dir):
+        """Select by top-level names, independently of previous exports."""
         output_dir = Path(output_dir)
         paths = set()
-
-        def add_if_file(relative_path):
-            relative_path = Path(relative_path)
-            if self.safe_generated_output_file(output_dir, relative_path) is not None:
-                paths.add(relative_path)
-
-        add_if_file("index.html")
-        add_if_file("input.config")
-
-        for pdf_path in output_dir.glob("* - 位置図.pdf"):
-            add_if_file(pdf_path.relative_to(output_dir))
-
-        asset_source = Path(__file__).parent / "html_shinsoku" / "asset"
-        for source_path in asset_source.rglob("*"):
-            if source_path.is_file():
-                add_if_file(Path("asset") / source_path.relative_to(asset_source))
-
-        asset_dir = output_dir / "asset"
-        add_if_file("asset/map.png")
-        map_pattern = re.compile(
-            r"(?:shui_\d+|haisui_\d+|shui_all|haisui_all|mix)_map\.png"
-        )
-        if asset_dir.is_dir():
-            for map_path in asset_dir.glob("*_map.png"):
-                if map_pattern.fullmatch(map_path.name):
-                    add_if_file(map_path.relative_to(output_dir))
-
-        qgz_dir = output_dir / "qgz"
-        qgz_pattern = re.compile(
-            r"(?:shui_\d+|haisui_\d+|shui_all|haisui_all|mix|application|location)\.qgz"
-        )
-        for name in ("ringyo_zumen.gpkg", "houi2.svg", "操作説明.md"):
-            add_if_file(Path("qgz") / name)
-        if qgz_dir.is_dir():
-            for qgz_path in qgz_dir.glob("*.qgz"):
-                if qgz_pattern.fullmatch(qgz_path.name):
-                    add_if_file(qgz_path.relative_to(output_dir))
-
-        # Migration from the immediately preceding UAV output structure.
-        for shp_path in (output_dir / "shp").glob("* - 申請区域.shp"):
-            for suffix in (".shp", ".shx", ".dbf", ".prj", ".cpg", ".qml", ".qmd", ".shp.xml"):
-                add_if_file(shp_path.with_suffix(suffix).relative_to(output_dir))
-        for archive in output_dir.glob("* - 提出用.zip"):
-            add_if_file(archive.relative_to(output_dir))
-
+        for name in ("index.html", "input.config"):
+            if self.safe_output_file(output_dir, Path(name)) is not None:
+                paths.add(Path(name))
+        directories = [output_dir / name for name in OUTPUT_DIRECTORIES]
+        for directory in directories:
+            if directory.is_symlink() or not directory.is_dir():
+                continue
+            for entry in directory.rglob("*"):
+                relative = entry.relative_to(output_dir)
+                if entry.suffix.lower() == ".config":
+                    continue
+                if self.safe_output_file(output_dir, relative) is not None:
+                    paths.add(relative)
         return paths
 
     @staticmethod
@@ -316,13 +255,12 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
             path.is_absolute()
             or path.drive
             or ".." in path.parts
-            or path.name == OUTPUT_MANIFEST_NAME
             or (path.parts and path.parts[0].casefold() == "backup")
         ):
             return None
         return path
 
-    def safe_generated_output_file(self, output_dir, relative_path):
+    def safe_output_file(self, output_dir, relative_path):
         relative_path = self.normalized_generated_output_path(
             Path(relative_path).as_posix()
         )
@@ -341,32 +279,6 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
         except (OSError, RuntimeError):
             return None
         return target_path
-
-    @staticmethod
-    def write_output_manifest(path, generated_paths):
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            "format": "RingyoZumenMaker.outputs",
-            "version": 1,
-            "paths": sorted(
-                Path(relative_path).as_posix()
-                for relative_path in generated_paths
-            ),
-        }
-        file_descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            dir=str(path.parent),
-        )
-        try:
-            with os.fdopen(file_descriptor, "w", encoding="utf-8") as manifest_file:
-                json.dump(data, manifest_file, ensure_ascii=False, indent=2)
-                manifest_file.write("\n")
-            os.replace(temporary_name, path)
-        finally:
-            if os.path.exists(temporary_name):
-                os.unlink(temporary_name)
 
     @staticmethod
     def remove_empty_generated_directories(output_dir, relative_paths):
@@ -473,24 +385,7 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
 
         displayed_path = self.displayed_output_path(path)
         self.append_output_log(f"設定ファイルを書き込みました: {displayed_path}")
-        if self.isSaveConfig.currentIndex() == 2:
-            self.register_generated_output_path(path)
         return True
-
-    def register_generated_output_path(self, path):
-        final_output_dir = Path(self.fileName.filePath()).resolve()
-        try:
-            relative_path = Path(path).resolve().relative_to(final_output_dir)
-        except (OSError, ValueError):
-            return
-
-        normalized = self.normalized_generated_output_path(relative_path.as_posix())
-        if normalized is None:
-            return
-        manifest_path = final_output_dir / OUTPUT_MANIFEST_NAME
-        generated_paths = self.previous_generated_output_paths(final_output_dir)
-        generated_paths.add(normalized)
-        self.write_output_manifest(manifest_path, generated_paths)
 
     def load_config_dialog(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -603,7 +498,7 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
         for child in list(elem):
             elem.remove(child)
 
-    def safe_file_name(self, value):
+    def safe_file_name(self, value, max_length=120):
         text = self.clean_html_text(value).strip()
         invalid_chars = set('\\/:*?"<>|')
         text = "".join(
@@ -611,7 +506,7 @@ class Main(UavWorkflow, QDockWidget, FORM_CLASS):
             for char in text
         )
         text = text.rstrip(". ")
-        return text[:120] or "名称未設定"
+        return (text[:max_length] if max_length is not None else text) or "名称未設定"
 
     def set_location_picture_paths(self, layout, style_dir):
         north_arrow = layout.itemById("方位記号")

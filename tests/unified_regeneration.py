@@ -1,4 +1,4 @@
-"""Reuse the real-QGIS fixture, then verify same-folder editing and output-only mode."""
+"""Verify editable project regeneration and recalculation without project output."""
 import runpy
 from pathlib import Path
 
@@ -12,8 +12,9 @@ import sqlite3
 
 project = QgsProject.instance()
 project.clear()
-qgz = output / "qgz/図面編集・再作成.qgz"
+qgz = output / "qgz" / widget.project_file_name()
 assert project.read(str(qgz))
+widget.singleLineName.setExpression('"name"')
 assert widget.fileName.filePath() == str(output.resolve())
 assert widget.singleLine.currentLayer().featureCount() == 2, "Filtered-out inputs must still be saved"
 assert widget.singleLineFilter.expression() == '"width" = 2'
@@ -65,7 +66,15 @@ source_layer.startEditing()
 source_layer.changeAttributeValue(next(source_layer.getFeatures()).id(), source_layer.fields().indexFromName("name"), "名称変更")
 assert source_layer.commitChanges()
 widget.backupQgz.setChecked(True)
+old_qgz = qgz
+for prefix in ("", "singleLine"):
+    getattr(widget, "rinpan" if not prefix else "singleLineRinpan").setValue(13)
+    getattr(widget, "shohan" if not prefix else "singleLineShohan").setValue(61)
 widget.on_submit(test=False)
+qgz = output / "qgz" / widget.project_file_name()
+assert qgz.name == "13林班61小班.qgz"
+assert qgz != old_qgz and not old_qgz.exists()
+assert len(list((output / "qgz").glob("*.qgz"))) == 1
 assert widget.progressBar.value() == 100, messages
 assert Path(project.fileName()).resolve() == qgz.resolve(), project.fileName()
 new_info = metadata(project)
@@ -91,7 +100,7 @@ assert saved_scratch.isValid() and saved_scratch.featureCount() == 1
 assert next(new_layer.getFeatures())["auxiliary_storage_labeling_label_position_x"] == 30
 latest_backup = max((output / "backup").iterdir(), key=lambda path: path.stat().st_mtime_ns)
 backup_project = QgsProject()
-assert backup_project.read(str(latest_backup / "qgz/図面編集・再作成.qgz"))
+assert backup_project.read(str(latest_backup / "qgz" / old_qgz.name))
 assert backup_project.title() == "未保存のタイトル"
 assert all(layer.isValid() for layer in backup_project.mapLayers().values())
 backup_project.clear()
@@ -108,20 +117,60 @@ protected = [qgz, output / "qgz/ringyo_zumen.gpkg"]
 before = [digest(path) for path in protected]
 new_layer.startEditing()
 assert new_layer.changeAttributeValue(next(new_layer.getFeatures()).id(), new_layer.fields().indexFromName("幅m"), 2.34)
+source_layer = widget.singleLine.currentLayer()
+source_layer.startEditing()
+source_feature = next(f for f in source_layer.getFeatures() if f["width"] == 2)
+assert source_layer.changeGeometry(source_feature.id(), QgsGeometry.fromWkt("MULTILINESTRING((0 10,240 10))"))
+widget.singleLineWidthOverride.setToProperty(QgsProperty.fromExpression("3.45"))
 before = [digest(path) for path in protected]
+project_name = project.fileName()
+map_extent = new_map.extent().toString(8)
+questions = QMessageBox.question
+QMessageBox.question = lambda *_: (_ for _ in ()).throw(AssertionError("No project output must not save input edits"))
 widget.outputMode.setCurrentIndex(1)
+try:
+    widget.on_submit(test=False)
+finally:
+    QMessageBox.question = questions
+assert widget.progressBar.value() == 100, messages
+assert [digest(path) for path in protected] == before
+assert "3.45" in (output / "index.html").read_text(encoding="utf-8")
+assert "240 m" in (output / "index.html").read_text(encoding="utf-8")
+assert project.fileName() == project_name and new_map.extent().toString(8) == map_extent
+assert source_layer.isModified()
+assert new_layer.isModified()
+assert source_layer.rollBack()
+assert new_layer.rollBack()
+widget.singleLineWidthOverride.setToProperty(QgsProperty.fromField("width"))
+latest_backup = max((output / "backup").iterdir(), key=lambda path: path.stat().st_mtime_ns)
+assert not list(latest_backup.rglob("*.qgz")) and not list(latest_backup.rglob("*.gpkg"))
+assert all(path.is_file() for path in protected)
+assert not (output / ".ringyo_zumen_outputs.json").exists()
+print("no QGZ: input geometry/width recalculated, HTML/SHP/PDF replaced, QGZ/GPKG and open project untouched OK", flush=True)
+
+# A new output folder receives no project or package, and the selection round-trips.
+fresh_output = output_root / "no-project-output"
+fresh_output.mkdir()
+widget.fileName.setFilePath(str(fresh_output))
+widget.backupQgz.setChecked(False)
+widget.on_submit(test=False)
+assert widget.progressBar.value() == 100, messages
+assert not (fresh_output / "qgz").exists()
+assert not list(fresh_output.rglob("*.qgz")) and not list(fresh_output.rglob("*.gpkg"))
+assert (fresh_output / "index.html").is_file() and (fresh_output / "位置図/位置図.pdf").is_file()
+assert list(fresh_output.rglob("shp/*.shp"))
+assert widget.configuration_data()["output"]["create_qgz"] is False
+restored = Main()
+restored.apply_configuration(widget.configuration_data())
+assert restored.outputMode.currentIndex() == 1
+restored.close()
+widget.fileName.setFilePath(str(output))
+# The no-backup path must also preserve previously generated packages.
 widget.on_submit(test=False)
 assert widget.progressBar.value() == 100, messages
 assert [digest(path) for path in protected] == before
-assert "2.34" in (output / "index.html").read_text(encoding="utf-8")
-assert new_layer.isModified()
-assert new_layer.rollBack()
-latest_backup = max((output / "backup").iterdir(), key=lambda path: path.stat().st_mtime_ns)
-assert not list(latest_backup.rglob("*.qgz")) and not list(latest_backup.rglob("*.gpkg"))
-assert all(str(path.relative_to(output)).replace("\\", "/") in
-           json.loads((output / ".ringyo_zumen_outputs.json").read_text(encoding="utf-8"))["paths"] for path in protected)
-print("output only: SHP/HTML/PDF replaced, QGZ/GPKG byte-identical and excluded from backup OK", flush=True)
-assert "3456" in (output / "index.html").read_text(encoding="utf-8")
+widget.backupQgz.setChecked(True)
+print("no QGZ: fresh folder, configuration round-trip and existing files preserved without backup OK", flush=True)
 
 source_layer = widget.singleLine.currentLayer()
 source_layer.startEditing()
@@ -163,7 +212,7 @@ widget.fileName.setFilePath(str(background_output))
 widget.on_submit(test=False)
 assert widget.progressBar.value() == 100, messages
 background_project = QgsProject()
-assert background_project.read(str(background_output / "qgz/図面編集・再作成.qgz"))
+assert background_project.read(str(background_output / "qgz" / widget.project_file_name()))
 background_info = metadata(background_project)
 background_key = next(key for key in background_info["datasets"] if key.startswith("background:"))
 persisted_background = background_project.mapLayer(background_info["datasets"][background_key])

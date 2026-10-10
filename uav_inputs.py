@@ -12,13 +12,15 @@ from qgis.core import (
 )
 
 
+CONFIG_VERSION = 6
+
 ATTRIBUTE_INPUTS = (
     ("shinkokyoku", "振興局"), ("shichoson", "市町村"), ("rinpan", "林班"),
     ("shohan", "小班"), ("edaban", "枝番"), ("jigyoCode", "事業"),
+    ("seizujigyosha", "製図事業者"), ("shinseibango", "申請No"),
     ("seizubi2", "製図日"), ("seizusha2", "製図者"), ("sanrinshoyusha2", "所有者"),
 )
-OVERRIDE_FIELDS = ("shichoson", "rinpan", "shohan", "jigyoCode", "seizubi2",
-                   "seizusha2", "sanrinshoyusha2")
+OVERRIDE_FIELDS = tuple(field for field, _ in ATTRIBUTE_INPUTS)
 LAYER_INPUTS = {
     "polygon": (QgsMapLayerProxyModel.PolygonLayer, ("polygonFilter", "polygonName", "edaban")),
     "jochiPolygon": (QgsMapLayerProxyModel.PolygonLayer, ("jochiFilter", "jochiName")),
@@ -28,7 +30,6 @@ LAYER_INPUTS = {
     "kijunten": (QgsMapLayerProxyModel.PointLayer, ("kijuntenExp",)),
     "olso": (QgsMapLayerProxyModel.RasterLayer, ()),
 }
-BASIC_TEXT = ("seizujigyosha", "seizusha", "rinshohan", "sanrinshoyusha", "shinseibango")
 
 
 def prefixed(prefix, name):
@@ -79,27 +80,20 @@ class UavInputs:
                 widget.setValue(-1)
             date = getattr(self, prefixed(prefix, "seizubi2"))
             date.setDisplayFormat("yyyy年MM月dd日")
-            date.setDate(self.seizubi.date())
-            # Keep inherited defaults aligned until explicitly edited.
-            for local, basic in (("seizubi2", "seizubi"), ("seizusha2", "seizusha"),
-                                 ("sanrinshoyusha2", "sanrinshoyusha")):
-                target = getattr(self, prefixed(prefix, local))
-                target.setProperty("inheritsBasic", True)
-                signal = target.dateChanged if local == "seizubi2" else target.textEdited
-                signal.connect(lambda *_, w=target: w.setProperty("inheritsBasic", False))
-                source = getattr(self, basic)
-                source_signal = source.dateChanged if local == "seizubi2" else source.textChanged
-                source_signal.connect(lambda value, w=target: self.update_inherited_input(w, value))
-        for field, combo_name in (("hukuin", "sagyodoLine"), ("singleLineWidth", "singleLine"),
-                                  ("minKijuntenkan", "kijunten")):
+            date.setDate(QDate.currentDate())
+        for field, combo_name in (("hukuin", "sagyodoLine"), ("singleLineWidth", "singleLine")):
             widget = getattr(self, field)
             widget.setMaximum(100000)
-            widget.setDecimals(2 if field in ("hukuin", "singleLineWidth") else 3)
+            widget.setDecimals(2)
             self.setup_override(field, combo_name)
             combo = getattr(self, combo_name)
             combo.layerChanged.connect(lambda *_, n=field: self.update_override_enabled(n))
             self.update_override_enabled(field)
+        self.minKijuntenkan.setMaximum(100000)
+        self.minKijuntenkan.setDecimals(3)
         self.minKijuntenkan.setValue(20)
+        self.minKijuntenkan.setEnabled(self.kijunten.currentLayer() is not None)
+        self.kijunten.layerChanged.connect(lambda layer: self.minKijuntenkan.setEnabled(layer is not None))
         self.scale.setScale(5000)
         self.locationScale.setScale(5000)
         self.isIchizu.toggled.connect(self.update_location_inputs)
@@ -116,25 +110,14 @@ class UavInputs:
         widget.setLayer(layer)
         widget.setExpression(expression)
 
-    @staticmethod
-    def update_inherited_input(widget, value):
-        if not widget.property("inheritsBasic"):
-            return
-        blocked = widget.blockSignals(True)
-        if isinstance(widget, QDateEdit):
-            widget.setDate(value)
-        else:
-            widget.setText(value)
-        widget.blockSignals(blocked)
-
     def update_location_inputs(self, *_):
-        for name in ("locationScale", "ichizuDirection"):
+        for name in ("locationPaper", "locationScale", "ichizuDirection"):
             getattr(self, name).setEnabled(self.isIchizu.isChecked())
 
     def setup_override(self, field, combo_name):
         button = getattr(self, field + "Override")
         numeric = field in ("rinpan", "shohan",
-                            "singleLineRinpan", "singleLineShohan", "hukuin", "singleLineWidth", "minKijuntenkan")
+                            "singleLineRinpan", "singleLineShohan", "hukuin", "singleLineWidth")
         kind = QgsPropertyDefinition.StandardPropertyTemplate.Double if numeric else QgsPropertyDefinition.StandardPropertyTemplate.String
         definition = QgsPropertyDefinition(field, field, kind)
         combo = getattr(self, combo_name)
@@ -144,19 +127,59 @@ class UavInputs:
         button.registerExpressionContextGenerator(generator)
         button.setUsageInfo("左の入力値を、選択レイヤの地物ごとの属性または式で上書きします。")
         self._override_bindings[field] = combo_name
+        if field.startswith("singleLine") and field != "singleLineWidth":
+            button.setUsageInfo("施行地の値を使う場合は「施行地の値を継承」を選びます。フィールド・式で個別に上書きすることもできます。")
+            button.menu().aboutToShow.connect(lambda n=field: self.add_inheritance_action(n))
         combo.layerChanged.connect(button.setVectorLayer)
         combo.layerChanged.connect(lambda *_, n=field: self.update_override_enabled(n))
         button.changed.connect(lambda n=field: self.update_override_enabled(n))
         button.activated.connect(lambda *_, n=field: self.update_override_enabled(n))
         self.update_override_enabled(field)
 
+    @staticmethod
+    def inheritance_expression(field):
+        return "@ringyo_application_" + field
+
+    def add_inheritance_action(self, name):
+        button = getattr(self, name + "Override")
+        field = name[len("singleLine"):]
+        field = field[0].lower() + field[1:]
+        menu = button.menu()
+        action = menu.addAction("施行地の値を継承")
+        action.setCheckable(True)
+        action.setChecked(button.isActive() and button.toProperty().asExpression() == self.inheritance_expression(field))
+        action.triggered.connect(lambda checked, n=name, f=field: self.set_attribute_inheritance(n, f, checked))
+        menu.insertAction(menu.actions()[0], action)
+
+    def set_attribute_inheritance(self, name, field, enabled):
+        prop = QgsProperty.fromExpression(self.inheritance_expression(field), enabled)
+        getattr(self, name + "Override").setToProperty(prop)
+        self.update_override_enabled(name)
+
+    def application_attribute_value(self, field):
+        layer = self.polygon.currentLayer()
+        features = self.selected_features("polygon", "polygonFilter") if layer else []
+        if features:
+            return self.override_value(field, layer, features[0])
+        widget = getattr(self, field)
+        if hasattr(widget, "expression"):
+            expression = QgsExpression(widget.expression())
+            context = QgsExpressionContext()
+            context.appendScopes(QgsExpressionContextUtils.globalProjectLayerScopes(layer))
+            value = expression.evaluate(context)
+            return "" if QgsVariantUtils.isNull(value) else value
+        return self.input_value(widget)
+
     def update_override_enabled(self, field):
         combo = getattr(self, self._override_bindings[field])
         button = getattr(self, field + "Override")
         available = combo.currentLayer() is not None
-        button.setEnabled(available)
+        button.setEnabled(available or field in OVERRIDE_FIELDS or
+                          (field.startswith("singleLine") and field != "singleLineWidth"))
+        if button.isActive() and button.toProperty().asExpression().startswith("@ringyo_application_"):
+            button.setToolTip("施行地の値を継承しています。ボタンを開いて継承を解除すると、個別入力に戻ります。")
         getattr(self, field).setEnabled(not button.isActive() and
-                                       (available or field not in ("hukuin", "singleLineWidth", "minKijuntenkan")))
+                                       (available or field not in ("hukuin", "singleLineWidth")))
 
     @staticmethod
     def input_value(widget):
@@ -167,6 +190,8 @@ class UavInputs:
         if isinstance(widget, QAbstractSpinBox):
             value = widget.value()
             return None if widget.minimum() == -1 and value == -1 else value
+        if hasattr(widget, "expression"):
+            return widget.expression()
         return widget.text()
 
     def evaluate_expression(self, text, layer, feature, description, default=""):
@@ -191,9 +216,17 @@ class UavInputs:
     def override_value(self, name, layer, feature):
         button = getattr(self, name + "Override")
         if button.isActive():
+            if name.startswith("singleLine"):
+                field = name[len("singleLine"):]
+                field = field[0].lower() + field[1:]
+                if button.toProperty().asExpression() == self.inheritance_expression(field):
+                    return self.application_attribute_value(field)
             # Do not silently use the literal input when an active expression fails.
             return self.evaluate_expression(button.toProperty().asExpression(), layer, feature, name, None)
-        return self.input_value(getattr(self, name))
+        widget = getattr(self, name)
+        if hasattr(widget, "expression"):
+            return self.evaluate_attribute(name, layer, feature)
+        return self.input_value(widget)
 
     def selected_features(self, combo_name, filter_name):
         layer = getattr(self, combo_name).currentLayer()
@@ -225,18 +258,13 @@ class UavInputs:
         values = {}
         for field, alias in ATTRIBUTE_INPUTS:
             widget_name = prefixed(prefix, field)
-            if field == "edaban":
-                value = self.evaluate_attribute(widget_name, layer, feature)
-            elif field == "shinkokyoku":
-                value = getattr(self, widget_name).currentText()
-            else:
-                value = self.override_value(widget_name, layer, feature)
+            value = self.override_value(widget_name, layer, feature)
             if value is None or (isinstance(value, str) and not value.strip()):
-                if alias not in ("枝番",):
-                    self.attribute_warnings.add(f"{layer.name()} 地物ID={feature.id()}: {alias}")
-                value = {"製図日": self.seizubi.date(), "製図者": self.seizusha.text(),
-                         "所有者": self.sanrinshoyusha.text()}.get(alias, None if alias in ("林班", "小班") else "")
-            if alias in ("林班", "小班") and value is not None:
+                value = None if alias in ("林班", "小班") else ""
+            if alias in ("林班", "小班"):
+                if value is None:
+                    values[alias] = None
+                    continue
                 try:
                     number = Decimal(str(value))
                     if not number.is_finite() or number != number.to_integral_value() or not 0 <= number <= 2147483647:
@@ -254,11 +282,10 @@ class UavInputs:
             else:
                 value = self.clean_html_text(value)
             values[alias] = value
-        values.update({"申請No": self.shinseibango.text(), "label": name, "source_id": feature.id()})
+        values.update({"label": name, "source_id": feature.id()})
         return values
 
     def validate_inputs(self):
-        self.attribute_warnings = set()
         self._selected_inputs = {}
         for name, (_, expressions) in LAYER_INPUTS.items():
             layer = getattr(self, name).currentLayer()
@@ -282,8 +309,6 @@ class UavInputs:
         if image and (not Path(image).is_file() or Path(image).suffix.lower() not in
                       (".tif", ".tiff", ".jpg", ".jpeg", ".png", ".jp2", ".ecw", ".img")):
             raise ValueError("コピーするオルソ画像には存在する対応形式のファイルを指定してください")
-        if not self.shinseibango.text().strip():
-            self.attribute_warnings.add("申請番号")
         return True
 
     def configuration_data(self):
@@ -296,11 +321,10 @@ class UavInputs:
                 value = self.input_value(getattr(self, name))
                 literals[name] = value.toString("yyyy-MM-dd") if isinstance(value, QDate) else value
         return {
-            "format": "RingyoZumenMaker.config", "version": 4, "mode": "uav",
-            "basic": {**{name: getattr(self, name).text() for name in BASIC_TEXT},
-                      "seizubi": self.seizubi.date().toString("yyyy-MM-dd")},
+            "format": "RingyoZumenMaker.config", "version": CONFIG_VERSION, "mode": "uav",
             "map": {"crs": self.crs.crs().authid(), "scale": self.scale.scale(),
-                    "paper": self.paper.currentText(), "show_deduction": self.isJochikeisan.isChecked(),
+                    "paper": self.paper.currentText(), "location_paper": self.locationPaper.currentText(),
+                    "show_deduction": self.isJochikeisan.isChecked(),
                     "area_display_decimals": self.areaDecimals.value(), "hectare_display_decimals": self.haDecimals.value(),
                     "create_location_map": self.isIchizu.isChecked(), "location_direction": self.ichizuDirection.currentIndex(),
                     "location_scale": self.locationScale.scale(), "minimum_exclusion_area_a": self.minJochi.value(),
@@ -311,27 +335,22 @@ class UavInputs:
                             for _, expressions in LAYER_INPUTS.values() for name in expressions},
             "attributes": literals,
             "overrides": {name: getattr(self, name + "Override").toProperty().toVariant() for name in self._override_bindings},
-            "inherit_basic": {name: bool(getattr(self, name).property("inheritsBasic"))
-                              for prefix in ("", "singleLine")
-                              for name in (prefixed(prefix, field) for field in ("seizubi2", "seizusha2", "sanrinshoyusha2"))},
             "output": {"directory": self.fileName.filePath(), "backup_generated": self.backupQgz.isChecked(),
-                       "mode": self.outputMode.currentIndex(),
+                       "create_qgz": self.outputMode.currentIndex() == 0,
                        "config_save_mode": self.isSaveConfig.currentIndex(), "config_file": self.saveConfig.filePath(),
                        "assignment_ortho": self.assignmentOlso.filePath()},
         }
 
     def apply_configuration(self, data):
-        basic = data.get("basic", {})
-        legacy_names = {"seizujigyosha": "drawing_company", "seizusha": "draftsperson",
-                        "rinshohan": "forest_compartment", "sanrinshoyusha": "forest_owner"}
-        for name in BASIC_TEXT:
-            getattr(self, name).setText(self.clean_html_text(basic.get(name, basic.get(legacy_names.get(name), ""))))
-        self.set_date_from_config(self.seizubi, basic.get("seizubi", basic.get("drawing_date")))
+        if (not isinstance(data, dict) or data.get("format") != "RingyoZumenMaker.config"
+                or data.get("version") != CONFIG_VERSION or data.get("mode") != "uav"):
+            raise ValueError("現在の形式の設定ファイルを指定してください")
         settings = data.get("map", {})
         self.crs.setCrs(QgsCoordinateReferenceSystem(settings.get("crs", "")))
         self.scale.setScale(float(settings.get("scale") or 5000))
-        self.locationScale.setScale(float(settings.get("location_scale", settings.get("scale") or 5000)))
+        self.locationScale.setScale(float(settings.get("location_scale", 5000)))
         self.paper.setCurrentIndex(1 if settings.get("paper") == "A3" else 0)
+        self.locationPaper.setCurrentIndex(1 if settings.get("location_paper", "A4") == "A3" else 0)
         for name, key in (("isJochikeisan", "show_deduction"), ("isIchizu", "create_location_map")):
             getattr(self, name).setChecked(bool(settings.get(key, False)))
         self.ichizuDirection.setCurrentIndex(1 if settings.get("location_direction") == 1 else 0)
@@ -360,32 +379,25 @@ class UavInputs:
                 widget = getattr(self, name)
                 value = literals.get(name)
                 if isinstance(widget, QDateEdit):
-                    self.set_date_from_config(widget, value or basic.get("seizubi"))
+                    self.set_date_from_config(widget, value)
                 elif isinstance(widget, QComboBox):
-                    widget.setCurrentIndex(max(0, widget.findText(str(value or data.get("region", "")))))
+                    widget.setCurrentIndex(max(0, widget.findText(str(value or ""))))
                 elif isinstance(widget, QAbstractSpinBox):
                     widget.setValue(int(value) if value is not None else -1)
                 else:
-                    widget.setText(self.clean_html_text(value if value is not None else
-                                   (basic.get(field.replace("2", ""), "") if field.endswith("2") else basic.get(field, ""))))
+                    widget.setText(self.clean_html_text(value))
         for name in self._override_bindings:
             prop = QgsProperty()
             variant = data.get("overrides", {}).get(name)
             if variant is not None:
                 if not prop.loadVariant(variant):
                     raise ValueError(f"{name}の上書き設定を読み込めません")
-            elif data.get("version", 0) <= 3 and expressions.get(name):
-                prop = QgsProperty.fromExpression(expressions[name])
             getattr(self, name + "Override").setToProperty(prop)
             self.update_override_enabled(name)
-        for prefix in ("", "singleLine"):
-            for field in ("seizubi2", "seizusha2", "sanrinshoyusha2"):
-                name = prefixed(prefix, field)
-                getattr(self, name).setProperty("inheritsBasic", data.get("inherit_basic", {}).get(name, True))
         output = data.get("output", {})
-        self.outputMode.setCurrentIndex(1 if output.get("mode") == 1 else 0)
+        self.outputMode.setCurrentIndex(0 if output.get("create_qgz", True) else 1)
         self.fileName.setFilePath(self.clean_html_text(output.get("directory")))
-        self.backupQgz.setChecked(bool(output.get("backup_generated", output.get("backup_qgz", False))))
+        self.backupQgz.setChecked(bool(output.get("backup_generated", False)))
         self.assignmentOlso.setFilePath(self.clean_html_text(output.get("assignment_ortho")))
         mode = int(output.get("config_save_mode", 0))
         self.isSaveConfig.setCurrentIndex(mode if mode in (0, 1, 2) else 0)

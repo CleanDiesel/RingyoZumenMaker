@@ -20,10 +20,10 @@ from qgis.core import (
     QgsVectorLayer, QgsGeometryGeneratorSymbolLayer, QgsVariantUtils,
 )
 
-from .editable_projects import EditableProjects
+from .editable_projects import make_project_references_relative
+from .uav_inputs import CONFIG_VERSION
 
 SCOPE = "RingyoZumenMaker"
-PROJECT_NAME = "図面編集・再作成.qgz"
 UID = "_rz_uid"
 
 
@@ -46,7 +46,14 @@ def metadata(project):
         data = json.loads(value)
     except (ValueError, TypeError):
         return None
-    return data if isinstance(data, dict) and data.get("format") == "RingyoZumenMaker.project" else None
+    if (not isinstance(data, dict) or data.get("format") != "RingyoZumenMaker.project"
+            or data.get("version") != 1):
+        return None
+    config = data.get("config", {})
+    if (not isinstance(config, dict) or config.get("format") != "RingyoZumenMaker.config" or config.get("version") != CONFIG_VERSION
+            or config.get("mode") != "uav"):
+        return None
+    return data
 
 
 def source_key(layer):
@@ -143,7 +150,7 @@ class UnifiedProjects:
         self.directory = Path(directory)
         self.qgz_dir = self.directory / "qgz"
         self.gpkg = self.qgz_dir / "ringyo_zumen.gpkg"
-        self.project_path = self.qgz_dir / PROJECT_NAME
+        self.project_path = self.qgz_dir / owner.project_file_name()
         self.snapshot = snapshot
         self.copied_ortho = copied_ortho
         self.captures = []
@@ -462,7 +469,7 @@ class UnifiedProjects:
             references.append(self.copied_ortho)
         references.extend(path for path in self.qgz_dir.glob("*.svg"))
         project.clear()
-        EditableProjects._make_project_references_relative(self.project_path, references)
+        make_project_references_relative(self.project_path, references)
         if not project.read(str(self.project_path)):
             raise OSError("統合QGZを検証できません")
         for layer in project.mapLayers().values():

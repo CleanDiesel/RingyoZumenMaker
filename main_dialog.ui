@@ -72,16 +72,6 @@
           <item row="2" column="1">
            <widget class="QLineEdit" name="sokuryosha"/>
           </item>
-          <item row="6" column="0">
-           <widget class="QLabel" name="label_3">
-            <property name="text">
-             <string>林小班</string>
-            </property>
-           </widget>
-          </item>
-          <item row="6" column="1">
-           <widget class="QLineEdit" name="rinshohan"/>
-          </item>
           <item row="7" column="0">
            <widget class="QLabel" name="label_4">
             <property name="text">
@@ -846,7 +836,6 @@
   <tabstop>tabWidget</tabstop>
   <tabstop>sokuryobi</tabstop>
   <tabstop>sokuryosha</tabstop>
-  <tabstop>rinshohan</tabstop>
   <tabstop>sanrinshoyusha</tabstop>
   <tabstop>ketasu</tabstop>
   <tabstop>crs</tabstop>
