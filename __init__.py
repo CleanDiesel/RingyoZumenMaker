@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
 
 def classFactory(iface):
-    from .main_dialog import mainDialogPlugin
-    return mainDialogPlugin(iface)
+    from .plugin import RingyoZumenMakerPlugin
+    return RingyoZumenMakerPlugin(iface)

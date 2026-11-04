@@ -256,3 +256,26 @@ h1 {
   height: 10mm;
   margin: 2mm 0;
 }
+
+/* Keep the measurement sheet's coordinate table and map proportions on A3. */
+#main_container { transform: scale(var(--paper-factor, 1)); transform-origin: top left; }
+body[data-paper="A3"] { width: 420mm; }
+#zumen_select { top: 2mm; left: 28.5mm; display: flex; align-items: center; gap: 2mm; font: 3mm "Yu Gothic", sans-serif; z-index: 20; }
+#info_container > div { min-width: 0; position: relative; overflow: hidden; }
+#info_container .description { position: absolute; top: .6mm; left: .8mm; font-size: 2.4mm; color: #444; }
+#info_container .value { padding: 3.8mm .6mm .5mm; min-height: 0; overflow-wrap: anywhere; overflow: hidden; }
+#info_container .value1, #info_container .value2 { min-width: 0; min-height: 0; line-height: 1.2; }
+#info_container #location .value { padding-top: .5mm; }
+#print_pages { display: none; }
+@media print {
+  .print_hide { display: none !important; }
+  body { width: 297mm; }
+  body[data-paper="A3"] { width: 420mm; }
+  body[data-print-all="1"] > #main_container { display: none; }
+  body[data-print-all="1"] > #print_pages { display: block; }
+  .print-page { width: 297mm; height: 210mm; overflow: hidden; break-after: page; }
+  body[data-paper="A3"] .print-page { width: 420mm; height: 297mm; }
+  .print-page:last-child { break-after: auto; }
+}
+
+#info_container .value1, #info_container .value2 { flex: 1 1 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }

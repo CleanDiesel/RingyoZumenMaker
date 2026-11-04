@@ -1,9 +1,10 @@
 [general]
 name=Ringyo Zumen Maker
-description=Need to replace fox
-version=0.1
+description=測点から林業向け実測図・座標表・位置図を作成し、編集内容を引き継いで再生成
+version=0.2
 author=Sonehara Takahiro
 email=m48c7e72a7vrb6w23yw@gmail.com
 qgisMinimumVersion=4.0
 category=Plugins
 icon=icon.png
+hasProcessingProvider=yes
