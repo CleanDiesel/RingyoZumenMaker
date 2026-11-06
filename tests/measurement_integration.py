@@ -1,7 +1,7 @@
 import os, sys, tempfile, json, traceback
 from pathlib import Path
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
-BASE = Path(r'C:\Users\m48c7\AppData\Local\Programs\OSGeo4W')
+BASE = Path(os.environ.get('QGIS_TEST_BASE', str(Path(sys.executable).resolve().parent.parent)))
 os.environ['PROJ_DATA'] = str(BASE / 'share/proj')
 os.environ['GDAL_DATA'] = str(BASE / 'share/gdal')
 os.environ['PYTHONIOENCODING'] = 'utf-8'
@@ -14,7 +14,7 @@ os.environ['QGIS_PREFIX_PATH'] = str(BASE / 'apps/qgis')
 os.environ['QT_PLUGIN_PATH'] = str(BASE / 'apps/Qt6/plugins')
 handles = [os.add_dll_directory(str(BASE / p)) for p in ('bin', 'apps/Qt6/bin', 'apps/qgis/bin')]
 sys.path[:0] = [str(BASE / 'apps/qgis/python'), str(BASE / 'apps/qgis/python/plugins'),
-    r'C:\Users\m48c7\AppData\Roaming\QGIS\QGIS4\profiles\default\python\plugins']
+    str(Path(__file__).resolve().parents[2])]
 print('Importing QGIS', flush=True)
 from qgis.core import *
 from qgis.PyQt.QtCore import QVariant
@@ -79,7 +79,7 @@ for i, page in enumerate(main.role_pages['work'], 1):
     page.attribute_inputs['surveyor'].setText('工作物測量者' + str(i))
 main.role_pages['work'][1].attribute_inputs['forest_compartment'].setText('"name"')
 from qgis.gui import QgsPropertyOverrideButton
-assert not main.findChildren(QgsPropertyOverrideButton)
+assert main.findChildren(QgsPropertyOverrideButton)
 assert list(main.basic_groups) == ['座標系', '地図', '位置図', '計算・表示']
 assert main.scale.parentWidget() is main.basic_groups['地図']
 assert main.locationScale.parentWidget() is main.basic_groups['位置図']
@@ -107,6 +107,7 @@ map_item = next(i for i in layout.items() if isinstance(i, QgsLayoutItemMap))
 map_item.setMapRotation(17)
 map_item.setScale(1250)
 custom = QgsLayoutItemLabel(layout); custom.setText('手動で追加'); custom.setId('user-note'); layout.addLayoutItem(custom)
+custom.attemptMove(QgsLayoutPoint(20, 8)); custom.attemptResize(QgsLayoutSize(40, 6))
 key = 'output:shui:' + main.role_pages['land'][0].drawing_uid + ':pt_layer'
 layer = project.mapLayer(info['datasets'][key])
 layer.styleManager().setCurrentStyle('図面:' + descriptor['key'])
@@ -259,8 +260,7 @@ for group in ('polygons','lines'):
 main.apply_configuration(legacy)
 assert len(main.role_pages['land']) == 1 and len(main.role_pages['ex_polygon']) == 1 and len(main.role_pages['work']) == 2
 print('LEGACY V2 CONFIG MIGRATION OK', flush=True)
-# Older attribute expressions are never evaluated. Shared literal values and
-# explicit former inheritance are copied to independent per-drawing inputs.
+# Earlier shared properties are restored into independent per-drawing inputs.
 old = json.loads(json.dumps(settings))
 old.pop('attribute_input_mode', None)
 for item in old['lines']['items']: item.pop('drawing_attributes', None)
@@ -270,13 +270,15 @@ old['drawing_attributes']['work'] = {
 }
 main.apply_configuration(old)
 assert all(p.attribute_inputs['forest_owner'].text() == '旧共通所有者' for p in main.role_pages['work'])
-assert all(p.attribute_inputs['surveyor'].text() == '測量者' for p in main.role_pages['work'])
+assert all(p.attribute_inputs['surveyor']._drawing_override.toProperty().asExpression() == '@rz_land_surveyor'
+           for p in main.role_pages['work'])
+assert all(p.attribute_inputs['forest_owner']._drawing_override.isActive() for p in main.role_pages['work'])
 main.role_pages['work'][0].attribute_inputs['forest_owner'].setText('個別変更')
 assert main.role_pages['work'][1].attribute_inputs['forest_owner'].text() == '旧共通所有者'
 round_trip = main.configuration_data()
 main.apply_configuration(round_trip)
 assert [p.attribute_inputs['forest_owner'].text() for p in main.role_pages['work']] == ['個別変更', '旧共通所有者']
-print('INDEPENDENT LITERAL ATTRIBUTES AND OLD CONFIG MIGRATION OK', flush=True)
+print('INDEPENDENT ATTRIBUTES AND OLD PROPERTY CONFIG MIGRATION OK', flush=True)
 # A failure while installing a new drawing restores both replaced and retired
 # generated files, while preserving a user-added file.
 trial = out/'transaction'; trial.mkdir()

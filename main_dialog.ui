@@ -225,7 +225,7 @@
              <bool>true</bool>
             </property>
             <property name="scale">
-             <bool>true</bool>
+             <double>1000.000000000000000</double>
             </property>
             <property name="minScale">
              <bool>false</bool>

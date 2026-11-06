@@ -1,7 +1,7 @@
 """Exercise native Processing, copied commands, and real batch autofill widgets."""
 from pathlib import Path
 import os, sys, tempfile, json, copy
-ROOT=Path(r'C:\Users\m48c7\AppData\Roaming\QGIS\QGIS4\profiles\default\python\plugins\RingyoZumenMaker')
+ROOT=Path(__file__).resolve().parents[1]
 bootstrap=(ROOT/'tests/measurement_integration.py').read_text(encoding='utf-8').split('from RingyoZumenMaker.main import Main')[0]
 exec(bootstrap)
 from RingyoZumenMaker.processing_provider import DrawingProvider, ALGORITHM_ID
@@ -94,6 +94,7 @@ print('CANCELLATION OK',flush=True)
 from RingyoZumenMaker.main import Main
 from RingyoZumenMaker.processing_provider import parameters_from_dock
 dock=Main();dock.crs.setCrs(QgsCoordinateReferenceSystem('EPSG:6678'))
+dock.scale.setScale(1000)
 dock.fileName.setFilePath(str(root/'dock-copy'))
 for owner in ('個別所有者A','個別所有者B'):
     page=dock.add_role_page('work');page.point_layer.setLayer(work)

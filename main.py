@@ -170,12 +170,20 @@ class MeasurementBase(DrawingOperations, ProjectSession, QDockWidget, FORM_CLASS
             self.last_result = service.run(test=test)
             self._generated_scales = service._generated_scales
             self.role_drawings = service.role_drawings
-            calculated = {page.drawing_uid: page for page in service.shuis + service.haisuis}
+            calculated = {}
+            for record in service.shuis + service.haisuis:
+                calculated.setdefault(record.registration_uid, []).append(record)
             for page in self.shuis + self.haisuis:
-                record = calculated.get(page.drawing_uid)
-                if record is not None:
+                records = calculated.get(page.drawing_uid, [])
+                if len(records) == 1:
+                    record = records[0]
                     for field in ('length', 'area', 'pt_layer', 'line_layer', 'area_layer', 'xy_table_rows'):
                         if hasattr(record, field): setattr(page, field, getattr(record, field))
+                elif records:
+                    page.length = sum(record.length or 0 for record in records)
+                    page.area = sum(record.area or 0 for record in records)
+                    page.xy_table_rows = [row for record in records for row in record.xy_table_rows]
+                    page.pt_layer = page.line_layer = page.area_layer = None
         except DrawingCancelled as error:
             self.append_output_log(str(error))
             self.progressBar.setValue(0)
@@ -244,6 +252,8 @@ class MeasurementBase(DrawingOperations, ProjectSession, QDockWidget, FORM_CLASS
                 "point_name_expressions": values.get("sokuten_label_expressions", []),
                 "primary_point_name_index": values.get("primary_label_index", 0),
                 "sort_expression": values.get("sort_exp", ""),
+                "part_expression": values.get("part_exp", ""),
+                "object_expression": values.get("object_exp", ""),
             })
         return pages
 
@@ -928,6 +938,18 @@ class ShuiPage(QWidget):
         attr_layout.addWidget(self.sokuten_labels, 0, 1)
         attr_layout.addWidget(QLabel("結合順指定"), 1, 0)
         attr_layout.addWidget(self.sort_exp, 1, 1)
+        self.part_exp = QgsFieldExpressionWidget()
+        self.part_exp.setLayer(self.point_layer.currentLayer())
+        self.point_layer.layerChanged.connect(self.part_exp.setLayer)
+        self.part_exp.setToolTip('離れた輪郭ごとに異なる値を指定します。空欄なら一つの輪郭。名前・面積・周長は地物単位でまとめます。')
+        attr_layout.addWidget(QLabel("パートの区分（任意）"), 3, 0)
+        attr_layout.addWidget(self.part_exp, 3, 1)
+        self.object_exp = QgsFieldExpressionWidget()
+        self.object_exp.setLayer(self.point_layer.currentLayer())
+        self.point_layer.layerChanged.connect(self.object_exp.setLayer)
+        self.object_exp.setToolTip('同じ値の測点を一つのポリゴンとして扱います。値が違えば別ポリゴン。空欄ならこの登録全体で一つです。')
+        attr_layout.addWidget(QLabel("地物の区分（任意）"), 2, 0)
+        attr_layout.addWidget(self.object_exp, 2, 1)
         layout.addRow(attr_group)
 
         self.delete_button = QPushButton("削除")
@@ -944,6 +966,8 @@ class ShuiPage(QWidget):
             "sokuten_label_expressions": label_expressions,
             "primary_label_index": self.sokuten_labels.primary_index(),
             "sort_exp": self.sort_exp.expression(),
+            "part_exp": self.part_exp.expression(),
+            "object_exp": self.object_exp.expression(),
         }
 
 

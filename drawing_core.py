@@ -22,6 +22,8 @@ import processing
 from .editable_projects import EditableProjects
 from .unified_project import full_input, metadata, checkpoint_package
 from .drawing_inputs import FIELDS, DrawingError, DrawingCancelled
+from .polygon_geometry import reconstruct_polygon_layers, validate_polygon_vertices
+from .map_frame import validate_map_frame, rendered_map_bounds
 
 OUTPUT_MANIFEST_NAME = ".ringyo_zumen_outputs.json"
 
@@ -74,6 +76,7 @@ class DrawingOperations:
         closed = False
         original_project = QgsProject.instance().fileName()
         self._generated_scales = {}
+        self._map_content_bounds = {}
         self._project_snapshot = None
         temporary_config = final_output_dir / "input.tmp.config"
 
@@ -541,6 +544,7 @@ class DrawingOperations:
             escaped_text = label_text.replace("'", "''")
             settings.fieldName = f"'{escaped_text}'"
             settings.isExpression = True
+            settings.labelPerPart = False
             text_format = settings.format()
             text_format.setFont(QFont("Yu Gothic"))
             text_format.setSize(9)
@@ -785,6 +789,12 @@ class DrawingOperations:
 
         return str(value).replace("\r\n", "\n").replace("\r", "\n")
 
+    def log_calculation_detail(self, message):
+        self.append_output_log(message)
+
+    def calculation_feedback(self):
+        return getattr(self, 'feedback', None)
+
     def add_calc_data(self, root, write_to_html=True):
         calcs = root.xpath("//*[@id='calc']")
         if not calcs:
@@ -857,7 +867,7 @@ class DrawingOperations:
                 ),
             )
             left_rows.append((f"{line_type}：", parts))
-            self.append_output_log(
+            self.log_calculation_detail(
                 f"{line_type}延長: {' + '.join(self.haisui_length_term(item) for item in typed_items)}"
                 f" = {self.format_length(total)}m"
             )
@@ -877,7 +887,7 @@ class DrawingOperations:
                 ),
             )
             left_rows.append(("除地ライン：", jochi_length_parts))
-            self.append_output_log(
+            self.log_calculation_detail(
                 "除地ライン延長: "
                 + " + ".join(self.haisui_length_term(item) for item in jochi_lines)
                 + f" = {self.format_length(jochi_line_length)}m"
@@ -902,7 +912,7 @@ class DrawingOperations:
                 ),
             )
             right_rows.append(("施行地面積：", work_area_parts, ""))
-            self.append_output_log(
+            self.log_calculation_detail(
                 f"施行地面積: {self.format_area_int(work_area)}m²"
             )
 
@@ -961,7 +971,7 @@ class DrawingOperations:
                 if has_below_minimum_area else ""
             )
             right_rows.append(("除地面積：", exclusion_area_parts, exclusion_note))
-            self.append_output_log(
+            self.log_calculation_detail(
                 f"除地面積: {self.format_area_decimal(exclusion_area)}m²"
                 f" ≃ {self.format_area_int(exclusion_area)}m²"
             )
@@ -998,7 +1008,7 @@ class DrawingOperations:
                 ),
             ]
             right_rows.append(("面積：", result_area_parts, ""))
-            self.append_output_log(
+            self.log_calculation_detail(
                 f"面積: {self.format_area_int(work_area)}m² - "
                 f"{self.format_area_int(exclusion_area)}m² = "
                 f"{self.format_area_int(result_area)}m² ≃ {result_area_ha}ha"
@@ -1308,6 +1318,9 @@ class DrawingOperations:
                 "data-option-panel": option_panel,
             }
         )
+        bounds = getattr(self, '_map_content_bounds', {}).get(option_panel)
+        if bounds:
+            img.set('data-content-bounds', json.dumps(bounds))
         maps[0].append(img)
 
     def add_shui_detail(self, root, option_panel, length, area):
@@ -1497,10 +1510,12 @@ class DrawingOperations:
                 values = page.values()
                 name = values.get("name", "").strip()
                 layer = values.get("point_layer")
-                if name and name in names:
+                button = getattr(page.name_edit, '_drawing_override', None)
+                data_defined = button.isActive() if button is not None else getattr(page, 'name_is_data_defined', False)
+                if name and not data_defined and name in names:
                     QMessageBox.warning(self, "エラー", f"ポリゴン名が重複しています: {name}")
                     return
-                if name:
+                if name and not data_defined:
                     names.add(name)
                 if layer is None:
                     QMessageBox.warning(self, "エラー", f"ポリゴン {page.index}: レイヤを選択してください")
@@ -1585,7 +1600,7 @@ class DrawingOperations:
         
         path = self.fileName.filePath()
 
-        if not path:
+        if not path and not getattr(self, '_skip_output_validation', False):
             QMessageBox.warning(
                 self,
                 "エラー",
@@ -1601,7 +1616,7 @@ class DrawingOperations:
         p = Path(path)
 
         # フォルダ存在確認
-        if not p.exists() or not p.is_dir():
+        if not getattr(self, '_skip_output_validation', False) and (not p.exists() or not p.is_dir()):
             QMessageBox.warning(
                 self,
                 "エラー",
@@ -1683,16 +1698,20 @@ class DrawingOperations:
                     'gpx': full_input(values.get('point_layer')),
                     'gpx_extract': values.get('filter_exp') or True,
                     'order': values.get('sort_exp'),
+                    'part': values.get('part_exp') or '',
                     'shui_pt': 'memory:',
                     'shui': 'memory:',
                     'area': 'memory:'
                 }
 
                 try:
-                    result = processing.run(make_layer, params, feedback=getattr(self, "feedback", None))
+                    result = processing.run(make_layer, params, feedback=self.calculation_feedback())
                     page.pt_layer = result['shui_pt']
                     page.line_layer = result['shui']
                     page.area_layer = result['area']
+                    validate_polygon_vertices(page.pt_layer, values.get('part_exp', ''))
+                    page.line_layer, page.area_layer, exterior_length = reconstruct_polygon_layers(
+                        page.line_layer, page.area_layer)
                     display_name = self.clean_html_text(values.get('name')).strip() or str(page.index)
                     page.pt_layer.setName(f"ポリゴン_{page.index}_{display_name}_点")
                     page.line_layer.setName(f"ポリゴン_{page.index}_{display_name}_線")
@@ -1704,9 +1723,7 @@ class DrawingOperations:
                         )
                     page.pt_layer.loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "point.qml"))
                     page.line_layer.loadNamedStyle(os.path.join(os.path.dirname(__file__), "styles", "line.qml"))
-                    page.length = sum(
-                        f.geometry().length() for f in page.line_layer.getFeatures()
-                    )
+                    page.length = exterior_length
                     page.area = sum(
                         f.geometry().area() for f in page.area_layer.getFeatures()
                     )
@@ -1767,7 +1784,7 @@ class DrawingOperations:
                 }
 
                 try:
-                    result = processing.run(make_layer, params, feedback=getattr(self, "feedback", None))
+                    result = processing.run(make_layer, params, feedback=self.calculation_feedback())
                     page.pt_layer = result['haisui_pt']
                     page.line_layer = result['haisui']
                     display_name = self.clean_html_text(values.get('name')).strip() or str(page.index)
@@ -1898,8 +1915,8 @@ class DrawingOperations:
                 return False
 
         if test:
-            self.append_output_log(
-                "試算のため地図PNG、位置図PDF、GeoPackageは書き込みません"
+            self.log_calculation_detail(
+                "測点の面積・外周長・延長の計算を完了しました。"
             )
             return True
 
@@ -2330,6 +2347,7 @@ class DrawingOperations:
 
         map_item.zoomToExtent(extent)
         map_item.setScale(scale)  # zoomToExtent後にもう一度縮尺固定
+        validate_map_frame(map_item, target_layers)
 
         layout.addLayoutItem(map_item)
 
@@ -2374,6 +2392,8 @@ class DrawingOperations:
             )
             return False
 
+        self._map_content_bounds[prefix] = rendered_map_bounds(
+            output_path, 150 * self.paper_factor(), 150 * self.paper_factor(), prefix)
         return True
 
     def xy_table_row_sort_key(self, row):
@@ -2432,9 +2452,8 @@ class RoleDrawingOperations:
         for index, page in enumerate(self.role_pages['work'], 1):
             self.role_drawings.append({'panel': 'work_' + page.drawing_uid, 'title': '付帯工作物 ' + (page.name_edit.text().strip() or str(index)),
                 'pages': [page], 'attributes': self.attribute_values('work', [page]), 'role': 'work'})
-        if test: return True
         from .editable_projects import EditableProjects
-        self._editable_projects = EditableProjects(self, self.output_dir(), getattr(self, '_project_snapshot', None)) if self.outputMode.currentIndex() == 0 else None
+        self._editable_projects = EditableProjects(self, self.output_dir(), getattr(self, '_project_snapshot', None)) if not test and self.outputMode.currentIndex() == 0 else None
         for drawing in self.role_drawings:
             layers = []
             for page in drawing['pages']:
@@ -2445,7 +2464,9 @@ class RoleDrawingOperations:
                     layers.append(layer)
                 self.configure_mix_line_label(page.line_layer, page.name_edit.text().strip(), color)
             layout = self.create_layout(target_layers=layers)
-            if layout is None or not self.export_layout_image(layout, drawing['panel']): return False
+            if layout is None: return False
+            if not test and not self.export_layout_image(layout, drawing['panel']): return False
+        if test: return True
         if self.isIchizu.isChecked() and not self.export_location_pdf(): return False
         return self.save_result_layers_to_geopackage()
 

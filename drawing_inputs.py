@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from copy import deepcopy
 from qgis.PyQt.QtCore import QDate
+from qgis.core import QgsProperty
 
 FIELDS = (
     ('survey_date', '測量日', 'sokuryobi'),
@@ -55,6 +56,9 @@ class DrawingInput:
         self.drawing_uid = item['drawing_uid']
         self.point_layer = InputValue(layer)
         self.name_edit = InputValue(item.get('name', ''))
+        name_property = QgsProperty()
+        name_property.loadVariant(item.get('name_property', {}))
+        self.name_is_data_defined = name_property.isActive()
         self.literal_attributes = deepcopy(item.get('drawing_attributes', {}))
         self.length = self.area = None
         self.pt_layer = self.line_layer = self.area_layer = None
@@ -68,6 +72,7 @@ class DrawingInput:
                 'point_layer': self.point_layer.currentLayer(),
                 'filter_exp': self.item.get('filter_expression', ''),
                 'sort_exp': self.item.get('sort_expression', '$id'),
+                'part_exp': self.item.get('part_expression', ''),
                 'sokuten_label_exp': labels[primary], 'sokuten_label_expressions': labels,
                 'primary_label_index': primary, 'haba': float(self.item.get('width', 1)),
                 'has_haba': has_width, 'is_jochi': self.role in ('ex_polygon', 'ex_line')}

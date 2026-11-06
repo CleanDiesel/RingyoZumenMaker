@@ -150,7 +150,13 @@ h1 {
   margin: 0 auto;
   min-height: 24mm;
   display: flex;
+  flex-shrink: 0;
 }
+#calc[data-page-mode="separate"] { visibility: hidden; }
+.calculation-sheet { width: 297mm; height: 210mm; transform: scale(var(--paper-factor, 1)); transform-origin: top left; }
+.calculation-content { width: 240mm; height: 158mm; margin: 3mm auto 0; font: 3.5mm 'Yu Gothic', sans-serif; }
+.calculation-content #calc { width: 100%; visibility: visible; }
+.coordinates-calculation-sheet .calculation-content { width: 160mm; height: 100%; margin: 0; }
 #calc > div {
   padding: 2mm;
   min-width: 0;
@@ -256,6 +262,8 @@ h1 {
   height: 10mm;
   margin: 2mm 0;
 }
+#zumen_select #xy_updown { position: static; transform: none; display: inline-flex; align-items: center; gap: 1mm; }
+#zumen_select #xy_updown button { display: inline-block; width: auto; height: auto; margin: 0; }
 
 /* Keep the measurement sheet's coordinate table and map proportions on A3. */
 #main_container { transform: scale(var(--paper-factor, 1)); transform-origin: top left; }
@@ -272,6 +280,7 @@ body[data-paper="A3"] { width: 420mm; }
   body { width: 297mm; }
   body[data-paper="A3"] { width: 420mm; }
   body[data-print-all="1"] > #main_container { display: none; }
+  body[data-print-all="1"] > .calculation-sheet { display: none; }
   body[data-print-all="1"] > #print_pages { display: block; }
   .print-page { width: 297mm; height: 210mm; overflow: hidden; break-after: page; }
   body[data-paper="A3"] .print-page { width: 420mm; height: 297mm; }

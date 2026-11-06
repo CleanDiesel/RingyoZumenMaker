@@ -207,7 +207,8 @@ class UnifiedProjects:
                     continue
                 key = "input:" + source_key(layer)
                 canonical = self.add_dataset(key, full_input(layer))
-                self.inputs[group + ":" + page.drawing_uid] = canonical
+                registration_uid = getattr(page, 'registration_uid', page.drawing_uid)
+                self.inputs[group + ":" + registration_uid] = canonical
 
     def _write_data(self):
         self.qgz_dir.mkdir(parents=True, exist_ok=True)
@@ -318,6 +319,12 @@ class UnifiedProjects:
 
     def save(self):
         self.prepare_inputs()
+        unnamed_object_layers = {
+            f'output:{prefix}:{page.drawing_uid}:line_layer'
+            for prefix, pages in (('shui', getattr(self.owner, 'shuis', [])),
+                                  ('haisui', getattr(self.owner, 'haisuis', [])))
+            for page in pages if not page.name_edit.text().strip()
+        }
         warnings = self.label_visibility_warnings()
         if warnings:
             message = ("名称を変更しましたが、以前のラベル非表示設定が引き継がれます。\n"
@@ -453,6 +460,10 @@ class UnifiedProjects:
                     manager.addStyle(style_name, adjusted)
                     current.writeToLayer(layer)
                 manager.setCurrentStyle(style_name)
+                if dataset_key in unnamed_object_layers:
+                    # An explicitly blank name overrides a previously saved
+                    # object label, while retaining its symbology and all point labels.
+                    layer.setLabelsEnabled(False)
                 visible.append(layer)
             if not project.mapThemeCollection().hasMapTheme(theme_name):
                 for node in root.findLayers():
@@ -501,6 +512,14 @@ class UnifiedProjects:
                     item.setKeepLayerStyles(False)
                     item.setFollowVisibilityPresetName(theme_name)
                     item.setFollowVisibilityPreset(True)
+                    if item.customProperty('rz/generated_map', False) and capture['key'] != 'location':
+                        from .map_frame import validate_map_frame
+                        measurement_layers = [canonical_layers[self.aliases[dataset_key]]
+                                              for _, dataset_key, _ in capture['layers']
+                                              if dataset_key.startswith('output:')
+                                              and dataset_key.endswith((':pt_layer', ':line_layer'))]
+                        if measurement_layers:
+                            validate_map_frame(item, measurement_layers, capture['title'])
                     if not descriptors:
                         project.viewSettings().setDefaultViewExtent(QgsReferencedRectangle(item.extent(), item.crs()))
                 elif isinstance(item, QgsLayoutItemPicture) and item.picturePath():
@@ -542,7 +561,7 @@ class UnifiedProjects:
             identity = str(generated.customProperty("rz/source_key", ""))
             selected = set(generated.selectedFeatureIds())
             config["selected_inputs"][identity] = [str(f[UID]) for f in generated.getFeatures() if f.id() in selected]
-        config["output"]["directory"] = ".."
+        config["output"]["directory"] = "../.." if getattr(self.owner, 'output_subdirectory', '') else ".."
         info = {"format": "RingyoZumenMaker.project", "version": 1, "config": config,
                 "layouts": descriptors, "tables": tables,
                 "datasets": {alias: canonical_layers[canonical].id() for alias, canonical in self.aliases.items()}}

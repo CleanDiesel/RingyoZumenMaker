@@ -10,11 +10,12 @@ from qgis.PyQt.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox, QTabWidget,
     QPushButton, QLabel, QLineEdit, QDateEdit, QMessageBox,
 )
-from qgis.core import QgsProperty
 
 
 from .drawing_inputs import FIELDS
 from .drawing_core import RoleDrawingOperations
+from .override_widgets import override_row, saved_value, restore_value
+from .drawing_overrides import resolve_attributes
 
 
 class InputTabs(QTabWidget):
@@ -51,6 +52,11 @@ class MeasurementWorkflow(RoleDrawingOperations):
         self.ex_tab = self.role_tab('除地', [('ex_polygon', '除地ポリゴン'), ('ex_line', '除地ライン')])
         self.work_tab = self.role_tab('付帯工作物', [('work', '付帯工作物ライン')])
         self.add_attributes(self.land_tab.layout(), 'land')
+        self.output_name = QLineEdit()
+        self.output_name.setPlaceholderText('空欄なら保存先へ直接出力')
+        self.formLayout_3.addRow('出力フォルダ名（任意）', override_row(
+            self.output_name, 'output_folder_name', '出力フォルダ名', self.output_attribute_layer))
+        self.output_name._drawing_override.setUsageInfo('施行地の対象測点の属性・式から、一つの出力フォルダ名を指定します。施行地がなければ付帯工作物の測点を使います。')
         # Output remains the final tab.
         self.tabWidget.removeTab(self.tabWidget.indexOf(output))
         self.tabWidget.addTab(output, '出力')
@@ -127,6 +133,13 @@ class MeasurementWorkflow(RoleDrawingOperations):
         pages, box = self.role_pages[role], self.role_boxes[role]
         page = ShuiPage(len(pages) + 1, self) if role in ('land', 'ex_polygon') else HaisuiPage(len(pages) + 1, self, required_width=role == 'ex_line')
         page.role = role
+        form = page.layout()
+        row_index, field_role = form.getWidgetPosition(page.name_edit)
+        form.removeWidget(page.name_edit)
+        form.setWidget(row_index, field_role, override_row(page.name_edit, 'name', '名前',
+                       page.point_layer.currentLayer, inherit=role != 'land'))
+        page.point_layer.layerChanged.connect(page.name_edit._drawing_override.setVectorLayer)
+        page.point_layer.layerChanged.connect(lambda *_: self.refresh_attribute_layers())
         page.name_edit.setText({'land': '施行地', 'ex_polygon': '除地', 'ex_line': '除地ライン', 'work': '付帯工作物'}[role] + str(len(pages) + 1))
         page.is_jochi.setChecked(role.startswith('ex_'))
         page.is_jochi.hide()
@@ -142,9 +155,13 @@ class MeasurementWorkflow(RoleDrawingOperations):
         if item:
             page.drawing_uid = item.get('drawing_uid') or page.drawing_uid
             page.name_edit.setText(str(item.get('name', '')))
+            restore_value(page.name_edit, {'value': item.get('name', ''), 'property': item.get('name_property', {})})
             page.point_layer.setLayer(self.resolve_layer_reference(item.get('layer')))
             page.filter_exp.setExpression(str(item.get('filter_expression', '')))
             page.sort_exp.setExpression(str(item.get('sort_expression', '')))
+            if hasattr(page, 'part_exp'):
+                page.part_exp.setExpression(str(item.get('part_expression', '')))
+                page.object_exp.setExpression(str(item.get('object_expression', '')))
             page.sokuten_labels.set_expressions(item.get('point_name_expressions'), item.get('primary_point_name_index', 0),
                 fallback_expression=str(item.get('point_name_expression', '')))
             if hasattr(page, 'haba_spin'):
@@ -153,7 +170,7 @@ class MeasurementWorkflow(RoleDrawingOperations):
                     page.isHaba.setChecked(bool(item.get('has_width', True)))
                 page.haba_spin.setValue(float(item.get('width', 1)))
         if role == 'work':
-            page.attribute_inputs = self.make_attribute_fields(page.layout())
+            page.attribute_inputs = self.make_attribute_fields(page.layout(), page=page)
             if item and 'drawing_attributes' in item:
                 self.restore_attribute_fields(page.attribute_inputs, item['drawing_attributes'])
         self.sync_role_pages()
@@ -180,6 +197,21 @@ class MeasurementWorkflow(RoleDrawingOperations):
         for index, page in enumerate(self.haisuis, 1): page.index = index
         self.isShui.setChecked(bool(self.shuis))
         self.isHaisui.setChecked(bool(self.haisuis))
+        self.refresh_attribute_layers()
+
+    def land_attribute_layer(self):
+        return next((page.point_layer.currentLayer() for page in self.role_pages['land']
+                     if page.point_layer.currentLayer() is not None), None)
+
+    def refresh_attribute_layers(self):
+        for widget in self.attribute_inputs.get('land', {}).values():
+            widget._drawing_override.setVectorLayer(self.land_attribute_layer())
+        if hasattr(self, 'output_name'):
+            self.output_name._drawing_override.setVectorLayer(self.output_attribute_layer())
+
+    def output_attribute_layer(self):
+        return self.land_attribute_layer() or next((page.point_layer.currentLayer() for page in self.role_pages['work']
+                                                   if page.point_layer.currentLayer() is not None), None)
 
     def organize_basic_tab(self, previous):
         basic = QWidget()
@@ -209,7 +241,7 @@ class MeasurementWorkflow(RoleDrawingOperations):
         self.tabWidget.insertTab(index, basic, '基本情報')
         self.basic_tab = basic
 
-    def make_attribute_fields(self, layout, use_land_fields=False):
+    def make_attribute_fields(self, layout, use_land_fields=False, page=None):
         group = QGroupBox('属性・測量情報（この図面）')
         form = QFormLayout(group)
         fields = {}
@@ -222,7 +254,10 @@ class MeasurementWorkflow(RoleDrawingOperations):
                 widget.setDisplayFormat('yyyy年MM月dd日')
                 widget.setCalendarPopup(True)
                 widget.setDate(QDate.currentDate())
-            form.addRow(label, widget)
+            getter = self.land_attribute_layer if page is None else page.point_layer.currentLayer
+            form.addRow(label, override_row(widget, key, label, getter, inherit=page is not None))
+            if page is not None:
+                page.point_layer.layerChanged.connect(widget._drawing_override.setVectorLayer)
             fields[key] = widget
         if isinstance(layout, QFormLayout):
             layout.insertRow(max(0, layout.rowCount() - 1), group)
@@ -235,7 +270,7 @@ class MeasurementWorkflow(RoleDrawingOperations):
 
     @staticmethod
     def serialize_attribute_fields(fields):
-        return {key: widget.date().toString('yyyy-MM-dd') if isinstance(widget, QDateEdit) else widget.text()
+        return {key: saved_value(widget, widget.date().toString('yyyy-MM-dd') if isinstance(widget, QDateEdit) else widget.text())
                 for key, widget in fields.items()}
 
     @staticmethod
@@ -243,11 +278,7 @@ class MeasurementWorkflow(RoleDrawingOperations):
         for key, widget in fields.items():
             if key not in data:
                 continue
-            value = data[key]
-            # Earlier configs paired literal inputs with a QGIS property. Only
-            # the saved literal is used; point attributes are never evaluated.
-            if isinstance(value, dict):
-                value = value.get('value', '')
+            value = restore_value(widget, data[key])
             if isinstance(widget, QDateEdit):
                 date = QDate.fromString(str(value), 'yyyy-MM-dd')
                 if not date.isValid():
@@ -261,9 +292,12 @@ class MeasurementWorkflow(RoleDrawingOperations):
         if not getattr(self, '_role_ui_ready', False): return data
         data['workflow'] = 'roles'
         for group, pages in (('polygons', self.shuis), ('lines', self.haisuis)):
-            for item, page in zip(data[group]['items'], pages): item['role'] = page.role
-        data['attribute_input_mode'] = 'literal_per_drawing'
+            for item, page in zip(data[group]['items'], pages):
+                item['role'] = page.role
+                item['name_property'] = page.name_edit._drawing_override.toProperty().toVariant()
+        data['attribute_input_mode'] = 'data_defined_per_drawing'
         data['drawing_attributes'] = {'land': self.serialize_attribute_fields(self.attribute_inputs['land'])}
+        data['output']['folder_name'] = saved_value(self.output_name, self.output_name.text())
         for item, page in zip(data['lines']['items'], self.haisuis):
             if page.role == 'work':
                 item['drawing_attributes'] = self.serialize_attribute_fields(page.attribute_inputs)
@@ -284,6 +318,8 @@ class MeasurementWorkflow(RoleDrawingOperations):
         settings['polygons'] = {'items': [], 'enabled': False}
         settings['lines'] = {'items': [], 'enabled': False}
         super().apply_configuration(settings)
+        folder_literal = restore_value(self.output_name, data.get('output', {}).get('folder_name', ''))
+        self.output_name.setText(str(folder_literal or ''))
         for role, box in self.role_boxes.items():
             while box.count():
                 page = box.widget(0); page.hide(); box.removeItem(0); page.deleteLater()
@@ -299,19 +335,14 @@ class MeasurementWorkflow(RoleDrawingOperations):
                     missing.append(str(item['layer'].get('name', role)))
         attributes = data.get('drawing_attributes', {})
         self.restore_attribute_fields(self.attribute_inputs['land'], attributes.get('land', {}))
-        if data.get('attribute_input_mode') != 'literal_per_drawing':
-            # Duplicate the former shared literals into each drawing, preserving
-            # explicit former inheritance as a one-time copy during migration.
+        if data.get('attribute_input_mode') not in ('literal_per_drawing', 'data_defined_per_drawing'):
+            # Restore earlier shared properties into independent drawing inputs.
             shared = attributes.get('work', {})
             land = self.serialize_attribute_fields(self.attribute_inputs['land'])
             for page in self.role_pages['work']:
                 migrated = {}
                 for key, value in shared.items():
-                    prop = QgsProperty()
-                    if isinstance(value, dict):
-                        prop.loadVariant(value.get('property', {}))
-                    inherited = prop.isActive() and prop.asExpression() == '@rz_land_' + key
-                    migrated[key] = land.get(key, '') if inherited else value
+                    migrated[key] = value
                 if not shared:
                     migrated = land
                 self.restore_attribute_fields(page.attribute_inputs, migrated)
@@ -333,21 +364,8 @@ class MeasurementWorkflow(RoleDrawingOperations):
 
     def attribute_values(self, role, pages):
         fields = self.attribute_inputs['land'] if role == 'land' else pages[0].attribute_inputs
-        values = {}
-        for key, widget in fields.items():
-            if isinstance(widget, QDateEdit):
-                date = widget.date()
-                if not date.isValid():
-                    raise ValueError('日付の指定を確認してください: ' + key)
-                text = date.toString('yyyy年MM月dd日')
-            else:
-                text = widget.text().strip()
-            values[key] = [text] if text else []
-        if not values['drawing_company']:
-            values['drawing_company'] = values['survey_company']
-        if not values['draftsperson']:
-            values['draftsperson'] = values['surveyor']
-        return values
+        inherited = self.attribute_values('land', self.role_pages['land']) if role != 'land' else None
+        return resolve_attributes(self.serialize_attribute_fields(fields), pages, inherited)
 
 
 

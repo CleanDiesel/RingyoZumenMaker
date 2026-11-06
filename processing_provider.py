@@ -13,15 +13,45 @@ from qgis.core import (
     QgsProcessingParameterEnum, QgsProcessingParameterFolderDestination,
     QgsProcessingOutputHtml, QgsProcessingOutputFile, QgsProcessingException,
     QgsExpression, QgsExpressionContext, QgsExpressionContextUtils, QgsVariantUtils,
-    QgsProject, QgsProcessingUtils, QgsVectorLayer,
+    QgsProject, QgsProcessingUtils, QgsVectorLayer, QgsProperty,
 )
 from .drawing_inputs import DrawingRequest, DrawingError, FIELDS
 from .drawing_service import DrawingService
 from .unified_project import source_key
+from .drawing_overrides import property_value, unpack
 
 ALGORITHM_ID = 'ringyozumenmaker:create_drawings'
 ROLES = (('LAND', 'land', '施行地'), ('EX_POLYGON', 'ex_polygon', '除地ポリゴン'),
          ('EX_LINE', 'ex_line', '除地ライン'), ('WORK', 'work', '付帯工作物'))
+
+
+def column_value(literal, prop):
+    """A single editable batch cell can hold a literal or deferred expression."""
+    if prop.isActive():
+        return 'expression:' + prop.asExpression()
+    if isinstance(literal, str) and literal.startswith(('expression:', 'field:', 'literal:')):
+        return 'literal:' + literal
+    return literal
+
+
+def column_input(text, legacy_expression=''):
+    # Older optional expression widgets may serialize a cleared field as "".
+    # It is an empty field reference, not a requested attribute override.
+    if legacy_expression.strip() not in ('', '""'):
+        return property_value(text, legacy_expression)
+    if text.startswith('literal:'):
+        return text[len('literal:'):]
+    if text.startswith('expression:'):
+        expression = text[len('expression:'):].strip()
+        if not expression:
+            raise DrawingError('expression: の後に式を指定してください')
+        return property_value('', expression)
+    if text.startswith('field:'):
+        field = text[len('field:'):].strip()
+        if not field:
+            raise DrawingError('field: の後にフィールド名を指定してください')
+        return property_value('', QgsProperty.fromField(field).asExpression())
+    return text
 
 
 class DrawingAlgorithm(QgsProcessingAlgorithm):
@@ -51,23 +81,40 @@ class DrawingAlgorithm(QgsProcessingAlgorithm):
         return command
     def shortHelpString(self):
         return ('施行地と除地は1図面、付帯工作物は区分ごとに実測図を作成します。'
+                '実行／試算の列で行ごとに選択できます。試算は計算結果だけをログへ表示し、出力せず次の行へ進みます。'
                 'バッチ画面ではレイヤ、幅、図面情報、出力先の各列にオートフィルを使えます。'
-                '区分の式を空欄にすると、そのレイヤの対象測点を1組として結びます。'
-                '区分の式には地物を分けるフィールドなどを指定してください。'
-                '測量者・所有者などの情報は固定文字列です。ポイント属性は参照しません。'
-                '同じ行から作る複数の付帯工作物には、その行の付帯工作物情報を使います。'
-                '図面ごとに情報を変える場合はバッチの行を分け、出力フォルダも分けてください。'
+                '地物の区分は名前・計算をまとめる単位です。空欄なら対象を1地物として扱います。'
+                '離れた輪郭はパートの区分で分けます。各パートを別々に閉じ、ラベル・面積・周長を地物単位にまとめます。'
+                '名前・属性情報は各列のオートフィル「式で計算」「式で値を追加」で入力できます。'
+                'これらの式は行ごとに評価します。測点属性を実行時に評価する場合は、セルに field:列名 または expression:式 を指定します。'
+                '実行時の式は各組の対象測点で評価し、異なる値を重複なく併記します。'
+                '付帯工作物の属性は expression:@rz_land_forest_owner などで施行地の値を継承できます。'
+                '名前欄での継承は expression:@rz_land_name。日付の式は日付型またはyyyy-MM-dd形式を返してください。'
                 '位置図の背景は現在のプロジェクトの表示レイヤを使います。')
 
     def initAlgorithm(self, config=None):
+        run_mode = QgsProcessingParameterEnum('RUN_MODE', '実行／試算', options=['実行', '試算'], defaultValue=0)
+        run_mode.setHelp('試算は計算結果だけをログに表示し、ファイル出力をスキップして次の行へ進みます。')
+        self.addParameter(run_mode)
         for prefix, role, label in ROLES:
             self.addParameter(QgsProcessingParameterVectorLayer(prefix, label + 'のポイントレイヤ',
                               types=[QgsProcessing.TypeVectorPoint], optional=True))
-            for suffix, title, default in (('FILTER', '抽出条件', ''), ('GROUP', '区分の式（空欄なら1組）', ''),
+            for suffix, title, default in (('FILTER', '抽出条件', ''), ('GROUP', '地物の区分の式（空欄なら1地物）', ''),
                                             ('LABEL', '測点名の式', '$id'), ('ORDER', '結合順の式', '$id')):
                 self.addParameter(QgsProcessingParameterExpression(prefix + '_' + suffix, label + '：' + title,
                     defaultValue=default, parentLayerParameterName=prefix, optional=suffix in ('FILTER', 'GROUP')))
             self.addParameter(QgsProcessingParameterString(prefix + '_NAME', label + '：名称', defaultValue=label, optional=True))
+            self.parameterDefinition(prefix + '_NAME').setHelp('オートフィルの「式で計算」「式で値を追加」に対応。測点属性の指定は field:列名、実行時の式は expression:式。')
+            name_expression = QgsProcessingParameterString(prefix + '_NAME_EXPRESSION', label + '：名称の上書きの式', optional=True)
+            name_expression.setHelp('空欄なら名称の直接入力値を使います。' +
+                                    ('施行地の名称を継承する場合は @rz_land_name。' if role != 'land' else ''))
+            name_expression.setFlags(name_expression.flags() | Qgis.ProcessingParameterFlag.Hidden)
+            self.addParameter(name_expression)
+            if role in ('land', 'ex_polygon'):
+                part = QgsProcessingParameterExpression(prefix + '_PART', label + '：パートの区分の式（任意）',
+                    parentLayerParameterName=prefix, optional=True)
+                part.setHelp('同じポリゴンの離れた輪郭を分ける式です。名前・ラベル・面積・周長は地物単位にまとめます。')
+                self.addParameter(part)
         self.addParameter(QgsProcessingParameterNumber('EX_LINE_WIDTH', '除地ライン：全幅（m）',
             type=QgsProcessingParameterNumber.Double, defaultValue=1, minValue=.01))
         self.addParameter(QgsProcessingParameterBoolean('WORK_HAS_WIDTH', '付帯工作物：幅を表示', defaultValue=True))
@@ -80,7 +127,16 @@ class DrawingAlgorithm(QgsProcessingAlgorithm):
                 param = QgsProcessingParameterString(prefix + '_' + key.upper(), title + '：' + label,
                     defaultValue=default, optional=not key.endswith('_date'))
                 if key.endswith('_date'): param.setHelp('yyyy-MM-dd形式で入力します（例：2026-11-05）。')
+                param.setHelp(param.help() + ' オートフィルの「式で計算」「式で値を追加」に対応。測点属性は field:列名、実行時の式は expression:式。' +
+                              ('施行地から継承する場合は expression:@rz_land_' + key + '。' if prefix == 'WORK' else ''))
                 self.addParameter(param)
+                expr = QgsProcessingParameterString(prefix + '_' + key.upper() + '_EXPRESSION',
+                    title + '：' + label + 'の上書きの式', optional=True)
+                expr.setHelp('空欄なら直接入力値を使用。' +
+                             ('施行地から継承する場合は @rz_land_' + key + '。' if prefix == 'WORK' else ''))
+                expr.setFlags(expr.flags() | Qgis.ProcessingParameterFlag.Hidden)
+                self.addParameter(expr)
+        self.addParameter(QgsProcessingParameterBoolean('WORK_INHERIT_ALL', '付帯工作物：属性・測量情報をすべて施行地から継承（各欄の式・フィールド指定を優先）', defaultValue=False))
         self.addParameter(QgsProcessingParameterCrs('CRS', '座標参照系', defaultValue='ProjectCrs'))
         self.addParameter(QgsProcessingParameterEnum('PAPER', '実測図の用紙サイズ', options=['A4', 'A3'], defaultValue=0))
         self.addParameter(QgsProcessingParameterNumber('SCALE', '実測図の縮尺の分母', type=QgsProcessingParameterNumber.Double, defaultValue=1000, minValue=1))
@@ -99,7 +155,12 @@ class DrawingAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterNumber('LOCATION_SCALE', '位置図の縮尺の分母', type=QgsProcessingParameterNumber.Double, defaultValue=5000, minValue=1))
         self.addParameter(QgsProcessingParameterBoolean('CREATE_PROJECT', '編集用QGZ・GPKGを作成', defaultValue=True))
         self.addParameter(QgsProcessingParameterBoolean('BACKUP', '既存の生成ファイルをバックアップ', defaultValue=False))
-        self.addParameter(QgsProcessingParameterFolderDestination('OUTPUT', '出力フォルダ'))
+        output_folder = QgsProcessingParameterFolderDestination('OUTPUT', '出力フォルダ', optional=True)
+        output_folder.setHelp('実行時は指定が必要です。試算時は出力先が空欄でも、フォルダを作成せず計算結果だけをログに表示します。')
+        self.addParameter(output_folder)
+        folder_name = QgsProcessingParameterString('OUTPUT_NAME', '出力フォルダ名（任意）', optional=True)
+        folder_name.setHelp('空欄なら保存先に直接出力。指定時は保存先の下に同名のフォルダを作成します。オートフィルの式で計算・式で値を追加に対応。field:列名、expression:式は施行地の対象測点（施行地がなければ付帯工作物）を参照します。名前は一つに絞ってください。')
+        self.addParameter(folder_name)
         # The dock can contain arbitrary numbers of registrations with different
         # layers and independent metadata. Preserve them in copied commands while
         # keeping the normal batch interface fully column based.
@@ -140,9 +201,14 @@ class DrawingAlgorithm(QgsProcessingAlgorithm):
                 groups.append(('未指定' if QgsVariantUtils.isNull(value) else str(value), clause))
             if not groups: raise DrawingError(label + 'の対象測点がありません')
         items, layers = [], {}
-        for group_label, clause in groups:
-            name = self.parameterAsString(parameters, prefix + '_NAME', context).strip() or label
-            if group_label: name += ' ' + group_label
+        for group_index, (group_label, clause) in enumerate(groups, 1):
+            saved_name = column_input(self.parameterAsString(parameters, prefix + '_NAME', context),
+                                      self.parameterAsString(parameters, prefix + '_NAME_EXPRESSION', context))
+            name_literal, name_property = unpack(saved_name)
+            name = str(name_literal).strip() if name_literal is not None else ''
+            # Group values can be internal multipart/ring IDs. Keep them out of
+            # drawing names; use short numbers only when several inputs exist.
+            if name and len(groups) > 1: name += str(group_index)
             uid = uuid.uuid5(uuid.NAMESPACE_URL, role + ':' + source_key(layer) + ':' + expression + ':' + clause).hex
             selected_filter = ' AND '.join('(' + value + ')' for value in (filter_text, clause) if value)
             item = {'name': name, 'drawing_uid': uid, 'role': role, 'layer': DrawingService.layer_reference(layer),
@@ -151,6 +217,9 @@ class DrawingAlgorithm(QgsProcessingAlgorithm):
                     'primary_point_name_index': 0,
                     'sort_expression': self.parameterAsString(parameters, prefix + '_ORDER', context),
                     'deduct_area': role in ('ex_polygon', 'ex_line')}
+            item['name_property'] = name_property.toVariant() if name_property.isActive() else {}
+            if role in ('land', 'ex_polygon'):
+                item['part_expression'] = self.parameterAsString(parameters, prefix + '_PART', context)
             if role in ('ex_line', 'work'):
                 item.update(width=self.parameterAsDouble(parameters, 'EX_LINE_WIDTH' if role == 'ex_line' else 'WORK_WIDTH', context),
                             has_width=role == 'ex_line' or self.parameterAsBool(parameters, 'WORK_HAS_WIDTH', context),
@@ -160,7 +229,19 @@ class DrawingAlgorithm(QgsProcessingAlgorithm):
         return items, layers
 
     def literal_attributes(self, parameters, context, prefix):
-        return {key: self.parameterAsString(parameters, prefix + '_' + key.upper(), context) for key, _, _ in FIELDS}
+        attributes = {}
+        inherit = prefix == 'WORK' and self.parameterAsBool(parameters, 'WORK_INHERIT_ALL', context)
+        for key, _, _ in FIELDS:
+            name = prefix + '_' + key.upper()
+            expression = self.parameterAsString(parameters, name + '_EXPRESSION', context)
+            saved = column_input(self.parameterAsString(parameters, name, context), expression)
+            if inherit and not unpack(saved)[1].isActive():
+                saved = property_value(saved, '@rz_land_' + key)
+            literal, prop = unpack(saved)
+            if key.endswith('_date') and prop.isActive() and not literal:
+                saved = {'value': QDate.currentDate().toString('yyyy-MM-dd'), 'property': prop.toVariant()}
+            attributes[key] = saved
+        return attributes
 
     def request(self, parameters, context):
         output = self.parameterAsFileOutput(parameters, 'OUTPUT', context)
@@ -171,6 +252,8 @@ class DrawingAlgorithm(QgsProcessingAlgorithm):
             if not isinstance(config, dict) or config.get('format') != 'RingyoZumenMaker.config' or config.get('mode') != 'measurement':
                 raise DrawingError('実測図の入力設定ではありません')
             config['output']['directory'] = output
+            if 'OUTPUT_NAME' in parameters:
+                config['output']['folder_name'] = column_input(self.parameterAsString(parameters, 'OUTPUT_NAME', context))
             layers = {}
             for group in ('polygons', 'lines'):
                 for item in config.get(group, {}).get('items', []):
@@ -182,12 +265,13 @@ class DrawingAlgorithm(QgsProcessingAlgorithm):
                     layers[item['drawing_uid']] = layer
             return DrawingRequest(config, layers)
         config = {'format': 'RingyoZumenMaker.config', 'version': 3, 'mode': 'measurement', 'workflow': 'roles',
-                  'attribute_input_mode': 'literal_per_drawing',
+                  'attribute_input_mode': 'data_defined_per_drawing',
                   'polygons': {'items': [], 'enabled': False}, 'lines': {'items': [], 'enabled': False},
                   'drawing_attributes': {'land': self.literal_attributes(parameters, context, 'LAND')},
                   'output': {'directory': output, 'create_qgz': self.parameterAsBool(parameters, 'CREATE_PROJECT', context),
+                             'folder_name': column_input(self.parameterAsString(parameters, 'OUTPUT_NAME', context)),
                              'backup_qgz': self.parameterAsBool(parameters, 'BACKUP', context)}}
-        config['basic'] = copy.deepcopy(config['drawing_attributes']['land'])
+        config['basic'] = {key: unpack(value)[0] for key, value in config['drawing_attributes']['land'].items()}
         config['map'] = {
             'crs': self.parameterAsCrs(parameters, 'CRS', context).authid(),
             'paper': ['A4', 'A3'][self.parameterAsEnum(parameters, 'PAPER', context)],
@@ -213,8 +297,15 @@ class DrawingAlgorithm(QgsProcessingAlgorithm):
 
     def processAlgorithm(self, parameters, context, feedback):
         try:
-            service = DrawingService(self.request(parameters, context), feedback=feedback)
-            return service.run()
+            trial = self.parameterAsEnum(parameters, 'RUN_MODE', context) == 1
+            request_parameters = dict(parameters)
+            if trial:
+                # No output settings need evaluating for a row that creates no files.
+                request_parameters['OUTPUT_NAME'] = ''
+                feedback.pushInfo('【試算のみ】計算結果をログに表示します。ファイル出力はスキップします。')
+            service = DrawingService(self.request(request_parameters, context), feedback=feedback)
+            result = service.run(test=trial, validate_output=not trial)
+            return {} if trial else result
         except DrawingError as error:
             raise QgsProcessingException(str(error)) from error
 
@@ -224,7 +315,15 @@ class DrawingProvider(QgsProcessingProvider):
     def name(self): return 'RingyoZumenMaker'
     def longName(self): return 'RingyoZumenMaker 実測図'
     def icon(self): return QIcon(str(Path(__file__).parent / 'icon.png'))
-    def loadAlgorithms(self): self.addAlgorithm(DrawingAlgorithm())
+    def loadAlgorithms(self):
+        from .processing_compat import install_batch_html_compat
+        install_batch_html_compat()
+        self.addAlgorithm(DrawingAlgorithm())
+
+    def unload(self):
+        from .processing_compat import remove_batch_html_compat
+        remove_batch_html_compat()
+        super().unload()
 
 
 def parameters_from_dock(dock):
@@ -238,6 +337,8 @@ def parameters_from_dock(dock):
               'TABLE_ORDER': settings['xy_table_order'], 'LOCATION': settings['create_location_map'],
               'LOCATION_PAPER': int(settings['location_paper'] == 'A3'), 'LOCATION_DIRECTION': settings['location_direction'],
               'LOCATION_SCALE': settings['location_scale'], 'CREATE_PROJECT': output['create_qgz'], 'BACKUP': output['backup_qgz']}
+    literal, prop = unpack(output.get('folder_name', ''))
+    params['OUTPUT_NAME'] = column_value(literal, prop)
     all_items = config['polygons']['items'] + config['lines']['items']
     complex_inputs = False
     for prefix, role, _ in ROLES:
@@ -253,13 +354,21 @@ def parameters_from_dock(dock):
         params[prefix + '_FILTER'] = item.get('filter_expression', '')
         params[prefix + '_LABEL'] = labels[item.get('primary_point_name_index', 0)] if labels else item.get('point_name_expression', '$id')
         params[prefix + '_ORDER'] = item.get('sort_expression', '$id')
-        params[prefix + '_NAME'] = item.get('name', '')
+        if role in ('land', 'ex_polygon'):
+            params[prefix + '_PART'] = item.get('part_expression', '')
+            params[prefix + '_GROUP'] = item.get('object_expression', '')
+        prop = QgsProperty()
+        prop.loadVariant(item.get('name_property', {}))
+        params[prefix + '_NAME'] = column_value(item.get('name', ''), prop)
         if role == 'ex_line': params['EX_LINE_WIDTH'] = item['width']
         if role == 'work':
             params.update(WORK_WIDTH=item['width'], WORK_HAS_WIDTH=item['has_width'], WORK_TYPE=item['type'])
-            for key, _, _ in FIELDS: params['WORK_' + key.upper()] = item.get('drawing_attributes', {}).get(key, '')
+            for key, _, _ in FIELDS:
+                literal, prop = unpack(item.get('drawing_attributes', {}).get(key, ''))
+                params['WORK_' + key.upper()] = column_value(literal, prop)
     for key, _, _ in FIELDS:
-        params['LAND_' + key.upper()] = config['drawing_attributes']['land'].get(key, '')
+        literal, prop = unpack(config['drawing_attributes']['land'].get(key, ''))
+        params['LAND_' + key.upper()] = column_value(literal, prop)
     if complex_inputs:
         params['DOCK_INPUTS'] = json.dumps(config, ensure_ascii=False)
     return params

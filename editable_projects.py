@@ -136,6 +136,12 @@ class EditableProjects:
                         self.owner._generated_scales[descriptor["drawing"]["folder"]] = main.scale()
                 if result != QgsLayoutExporter.Success:
                     raise OSError("編集済み図面を書き出せません: " + str(target))
+                if target.suffix.lower() == '.png' and descriptor.get('drawing'):
+                    from .map_frame import rendered_map_bounds
+                    panel = descriptor['drawing']['folder']
+                    self.owner._map_content_bounds[panel] = rendered_map_bounds(
+                        target, 150 * self.owner.paper_factor(), 150 * self.owner.paper_factor(),
+                        descriptor['drawing'].get('title', layout.name()))
         text = (Path(__file__).parent / "qgs_editing.md").read_text(encoding="utf-8")
         text += "\n## 今回のレイアウトと出力先\n\n"
         for item in info["layouts"]:
