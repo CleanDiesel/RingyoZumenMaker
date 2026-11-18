@@ -291,6 +291,7 @@ class MeasurementBase(DrawingOperations, ProjectSession, QDockWidget, FORM_CLASS
                 "draftsperson": self.seizusha.text(),
                 "forest_compartment": self.rinshohan.text(),
                 "forest_owner": self.sanrinshoyusha.text(),
+                "application_number": self.application_number.text(),
             },
             "map": {
                 "coordinate_decimals": self.ketasu.value(),
@@ -403,6 +404,7 @@ class MeasurementBase(DrawingOperations, ProjectSession, QDockWidget, FORM_CLASS
             "seizusha": basic.get("draftsperson", ""),
             "rinshohan": basic.get("forest_compartment", ""),
             "sanrinshoyusha": basic.get("forest_owner", ""),
+            "application_number": basic.get("application_number", ""),
         }
         for widget_name, value in text_values.items():
             getattr(self, widget_name).setText(self.clean_html_text(value))

@@ -100,6 +100,8 @@ def resolve_attributes(attributes, pages, inherited=None):
         values['drawing_company'] = list(values['survey_company'])
     if not values['draftsperson']:
         values['draftsperson'] = list(values['surveyor'])
+    if inherited is not None and not values['application_number']:
+        values['application_number'] = list(inherited['application_number'])
     return values
 
 

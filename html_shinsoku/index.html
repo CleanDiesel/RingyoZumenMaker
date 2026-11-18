@@ -16,6 +16,9 @@
       </select>
       <button type="button" id="drawing_next">次の図面</button>
       <label><input type="checkbox" id="print_all"> 全図面をまとめて印刷</label>
+      <label id="application_number_control" hidden>申請番号
+        <input type="text" id="application_number_input" autocomplete="off" placeholder="例 2002-089">
+      </label>
     </div>
     <div id="info_container">
       <div id="jissokudate">
@@ -50,8 +53,10 @@
           </div>
           <div class="value2" id="rinshohan">
           </div>
-          <!-- <div class="value3" id="haisui_name">
-          </div> -->
+          <div class="application-number-row" hidden>
+            <span class="application-number-label">申請番号</span>
+            <span id="application_number"></span>
+          </div>
         </div>
       </div>
     </div>

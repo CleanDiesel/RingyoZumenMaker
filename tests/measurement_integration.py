@@ -74,6 +74,8 @@ ex_points.updateExtents(); project.addMapLayer(ex_points)
 main.role_pages['ex_polygon'][0].point_layer.setLayer(ex_points)
 main.attribute_inputs['land']['forest_owner'].setText('山林所有者')
 main.attribute_inputs['land']['surveyor'].setText('測量者')
+main.attribute_inputs['land']['application_number'].setText('000123-AB')
+main.role_pages['work'][1].attribute_inputs['application_number'].setText('000456-CD')
 for i, page in enumerate(main.role_pages['work'], 1):
     page.attribute_inputs['forest_owner'].setText('工作物所有者' + str(i))
     page.attribute_inputs['surveyor'].setText('工作物測量者' + str(i))
@@ -194,8 +196,11 @@ root = ET.fromstring(html, ET.HTMLParser())
 options = root.xpath('//*[@id="zumen_type"]/option[@value!=""]')
 assert len(options) == 3, [o.get('value') for o in options]
 assert root.xpath('//h1')[0].text == '実測図'
+assert root.xpath('//*[@id="application_number"]/span[@data-option-panel="land"]')[0].text == '000123-AB'
 for i, page in enumerate(main.role_pages['work'], 1):
     panel = 'work_' + page.drawing_uid
+    assert root.xpath('//*[@id="application_number"]/span[@data-option-panel="' + panel + '"]')[0].text == (
+        '000123-AB' if i == 1 else '000456-CD')
     assert root.xpath('//*[@id="sanrinshoyusha"]/span[@data-option-panel="' + panel + '"]')[0].text == '工作物所有者' + str(i)
     assert root.xpath('//*[@id="sokuryosha"]/span[@data-option-panel="' + panel + '"]')[0].text == '工作物測量者' + str(i)
 assert root.xpath('//*[@id="rinshohan"]/span[@data-option-panel="work_' + main.role_pages['work'][1].drawing_uid + '"]')[0].text == '"name"' 
@@ -233,6 +238,8 @@ print('LAND AND EXCLUSION LINE ONLY OK', flush=True)
 # An ancillary-work-only export must support is_selected() and retain selection
 # when the generated QGZ is opened again.
 main.apply_configuration(settings)
+assert main.attribute_inputs['land']['application_number'].text() == '000123-AB'
+assert main.role_pages['work'][1].attribute_inputs['application_number'].text() == '000456-CD'
 for role in ('land','ex_polygon','ex_line'):
     for page in list(main.role_pages[role]): main.remove_role_page(page)
 for page in list(main.role_pages['work'][1:]): main.remove_role_page(page)
@@ -255,9 +262,13 @@ print('WORK ONLY AND SELECTED POINT RESTORATION OK', flush=True)
 # Older configuration files retain their measurements and map into the new roles.
 legacy = copy_settings = json.loads(json.dumps(settings))
 legacy['version'] = 2; legacy.pop('mode', None); legacy.pop('workflow', None); legacy.pop('drawing_attributes', None)
+legacy['basic'].pop('application_number', None)
 for group in ('polygons','lines'):
     for item in legacy[group]['items']: item.pop('role', None)
+main.application_number._drawing_override.setToProperty(QgsProperty.fromExpression("'OLD-OVERRIDE'"))
 main.apply_configuration(legacy)
+assert not main.attribute_inputs['land']['application_number'].text()
+assert not main.application_number._drawing_override.isActive()
 assert len(main.role_pages['land']) == 1 and len(main.role_pages['ex_polygon']) == 1 and len(main.role_pages['work']) == 2
 print('LEGACY V2 CONFIG MIGRATION OK', flush=True)
 # Earlier shared properties are restored into independent per-drawing inputs.

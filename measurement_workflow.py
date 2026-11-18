@@ -250,6 +250,8 @@ class MeasurementWorkflow(RoleDrawingOperations):
                 widget = getattr(self, original_name)
             else:
                 widget = QDateEdit() if key.endswith('_date') else QLineEdit()
+                if key == 'application_number':
+                    widget.setPlaceholderText('施行地・除地の図面と同じ')
             if isinstance(widget, QDateEdit):
                 widget.setDisplayFormat('yyyy年MM月dd日')
                 widget.setCalendarPopup(True)
@@ -334,7 +336,8 @@ class MeasurementWorkflow(RoleDrawingOperations):
                 if item.get('layer') and page.point_layer.currentLayer() is None:
                     missing.append(str(item['layer'].get('name', role)))
         attributes = data.get('drawing_attributes', {})
-        self.restore_attribute_fields(self.attribute_inputs['land'], attributes.get('land', {}))
+        land_attributes = {'application_number': self.application_number.text(), **attributes.get('land', {})}
+        self.restore_attribute_fields(self.attribute_inputs['land'], land_attributes)
         if data.get('attribute_input_mode') not in ('literal_per_drawing', 'data_defined_per_drawing'):
             # Restore earlier shared properties into independent drawing inputs.
             shared = attributes.get('work', {})

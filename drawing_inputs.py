@@ -13,6 +13,7 @@ FIELDS = (
     ('draftsperson', '製図者名', 'seizusha'),
     ('forest_compartment', '林小班', 'rinshohan'),
     ('forest_owner', '山林所有者名', 'sanrinshoyusha'),
+    ('application_number', '申請番号', 'application_number'),
 )
 
 

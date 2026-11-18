@@ -17,6 +17,13 @@
   const pageControls = document.getElementById('xy_updown');
   const previousPage = document.getElementById('xy_prev');
   const nextPage = document.getElementById('xy_next');
+  const locationRows = [...main.querySelectorAll('#location .value1, #location .value2, .application-number-row')];
+  const applicationNumberControl = document.getElementById('application_number_control');
+  const applicationNumberInput = document.getElementById('application_number_input');
+  const editableApplicationNumbers = new Map([...main.querySelectorAll('#application_number [data-option-panel]')]
+    .filter(value => !value.textContent.trim()).map(value => [value.dataset.optionPanel, value]));
+  const enteredApplicationNumbers = new Map();
+  const applicationNumberKey = panel => `ringyo:application-number:${location.pathname}:${panel}`;
   const pageStatus = document.createElement('span');
   if (pageControls) {
     toolbar.append(pageControls);
@@ -48,6 +55,25 @@
       panel.hidden = !values.some(value => options.has(value)) || !values.includes(select.value);
       if (panel === calc && !hasCalculation()) panel.hidden = true;
     });
+    const number = editableApplicationNumbers.get(select.value);
+    if (applicationNumberControl) applicationNumberControl.hidden = !number;
+    if (number) {
+      if (!enteredApplicationNumbers.has(select.value)) {
+        let saved = '';
+        try { saved = localStorage.getItem(applicationNumberKey(select.value)) || ''; } catch {}
+        enteredApplicationNumbers.set(select.value, saved);
+      }
+      const value = enteredApplicationNumbers.get(select.value);
+      number.textContent = value.trim();
+      number.title = number.textContent;
+      if (applicationNumberInput.value !== value) applicationNumberInput.value = value;
+    }
+    locationRows.forEach(row => {
+      const value = row.querySelector('#application_number') || row;
+      const activeValue = value.querySelector('[data-option-panel]') ?
+        value.querySelector('[data-option-panel]:not([hidden])') : value;
+      row.hidden = !activeValue?.textContent.trim();
+    });
   }
   function updateMapVisibility() {
     if (mapContainer && mapToggle) mapContainer.dataset.mapVisible = mapToggle.checked ? '1' : '0';
@@ -73,7 +99,7 @@
     main.dataset.pageCount = String(choices.length);
   }
   function fitHeaders() {
-    document.querySelectorAll('#info_container .value, #info_container .value1, #info_container .value2').forEach(element => {
+    main.querySelectorAll('#info_container .value, #info_container .value1, #info_container .value2, #location .value3, .application-number-row').forEach(element => {
       if (!element.getClientRects().length) return;
       element.style.fontSize = '';
       for (let size = 3; size > 1.5 && (element.scrollHeight > element.clientHeight + 1 || element.scrollWidth > element.clientWidth + 1); size -= .1) {
@@ -187,12 +213,12 @@
     tables.forEach(table => { table.hidden = true; });
     if (activeTables()[0]) activeTables()[0].hidden = false;
     if (mapContainer) mapContainer.dataset.mapVisible = '1';
+    fitHeaders();
     if (calc) delete calc.dataset.pageMode;
     const separate = overlapsMap();
     if (calc) calc.dataset.pageMode = separate ? 'separate' : 'inline';
     if (separate) splitCalculations();
     showPage();
-    fitHeaders();
     window.ringyoSheetReady = true;
   }
   const previousDrawing = document.getElementById('drawing_previous');
@@ -217,6 +243,12 @@
     });
   }
   select.addEventListener('change', drawingChanged);
+  applicationNumberInput?.addEventListener('input', () => {
+    const value = applicationNumberInput.value;
+    enteredApplicationNumbers.set(select.value, value);
+    try { localStorage.setItem(applicationNumberKey(select.value), value); } catch {}
+    reflow();
+  });
   mapToggle?.addEventListener('change', updateMapVisibility);
   const note = document.createElement('span');
   note.textContent = '印刷：指定用紙・横向き／倍率100%／余白なし／ヘッダー・フッターなし';

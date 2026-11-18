@@ -273,7 +273,18 @@ body[data-paper="A3"] { width: 420mm; }
 #info_container .description { position: absolute; top: .6mm; left: .8mm; font-size: 2.4mm; color: #444; }
 #info_container .value { padding: 3.8mm .6mm .5mm; min-height: 0; overflow-wrap: anywhere; overflow: hidden; }
 #info_container .value1, #info_container .value2 { min-width: 0; min-height: 0; line-height: 1.2; }
-#info_container #location .value { padding-top: .5mm; }
+#info_container :is(#jissokusya, #seizusya) .value { padding-top: 4.5mm; gap: .35mm; }
+#info_container :is(#jissokusya, #seizusya) .value > div { flex: 0 1 auto; }
+#application_number_input { width: 30mm; font: inherit; }
+#info_container #location .value { padding-top: .5mm; gap: .35mm; }
+#info_container #location .value > div {
+  flex: 0 1 auto;
+  min-height: 0;
+  line-height: 1.2;
+  overflow: hidden;
+}
+#location .application-number-row { order: 1; }
+#location .application-number-label { color: #444; font-size: .85em; margin-inline-end: .7em; white-space: nowrap; }
 #print_pages { display: none; }
 @media print {
   .print_hide { display: none !important; }

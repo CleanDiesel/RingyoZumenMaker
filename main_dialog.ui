@@ -92,6 +92,16 @@
           <item row="7" column="1">
            <widget class="QLineEdit" name="sanrinshoyusha"/>
           </item>
+          <item row="8" column="0">
+           <widget class="QLabel" name="application_number_label">
+            <property name="text">
+             <string>申請番号</string>
+            </property>
+           </widget>
+          </item>
+          <item row="8" column="1">
+           <widget class="QLineEdit" name="application_number"/>
+          </item>
           <item row="1" column="1">
            <widget class="QLineEdit" name="sokuryojigyosha">
             <property name="placeholderText">
