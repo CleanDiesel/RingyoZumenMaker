@@ -16,6 +16,17 @@ class DrawingExpressionContext(QgsExpressionContextGenerator):
         return context_for(self.layer_getter())
 
 
+def inherits_land_value(widget, key):
+    prop = widget._drawing_override.toProperty()
+    return prop.isActive() and prop.asExpression() == '@rz_land_' + key
+
+
+def set_land_value_inheritance(widget, key, enabled):
+    button = widget._drawing_override
+    button.setToProperty(QgsProperty.fromExpression('@rz_land_' + key, enabled))
+    button.changed.emit()
+
+
 def override_row(widget, key, label, layer_getter, inherit=False):
     row = QWidget()
     layout = QHBoxLayout(row)
@@ -44,12 +55,8 @@ def override_row(widget, key, label, layer_getter, inherit=False):
                     old.deleteLater()
             action = menu.addAction('施行地の値を継承')
             action.setCheckable(True)
-            expression = '@rz_land_' + key
-            action.setChecked(button.isActive() and button.toProperty().asExpression() == expression)
-            def toggle(checked):
-                button.setToProperty(QgsProperty.fromExpression(expression, checked))
-                widget.setEnabled(not checked)
-            action.triggered.connect(toggle)
+            action.setChecked(inherits_land_value(widget, key))
+            action.triggered.connect(lambda checked: set_land_value_inheritance(widget, key, checked))
             menu.insertAction(menu.actions()[0], action)
         button.menu().aboutToShow.connect(inheritance_menu)
     layout.addWidget(widget, 1)

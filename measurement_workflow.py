@@ -4,17 +4,19 @@ from pathlib import Path
 from contextlib import contextmanager
 
 from lxml import etree as ET
-from qgis.PyQt.QtCore import QDate
+from qgis.PyQt.QtCore import QDate, QSignalBlocker
 from qgis.PyQt.QtGui import QColor
 from qgis.PyQt.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox, QTabWidget,
-    QPushButton, QLabel, QLineEdit, QDateEdit, QMessageBox,
+    QPushButton, QLabel, QLineEdit, QDateEdit, QCheckBox, QMessageBox,
 )
 
 
 from .drawing_inputs import FIELDS
 from .drawing_core import RoleDrawingOperations
-from .override_widgets import override_row, saved_value, restore_value
+from .override_widgets import (
+    override_row, saved_value, restore_value, inherits_land_value, set_land_value_inheritance,
+)
 from .drawing_overrides import resolve_attributes
 
 
@@ -171,8 +173,15 @@ class MeasurementWorkflow(RoleDrawingOperations):
                 page.haba_spin.setValue(float(item.get('width', 1)))
         if role == 'work':
             page.attribute_inputs = self.make_attribute_fields(page.layout(), page=page)
+            page.inherit_all_attributes.toggled.connect(
+                lambda enabled: self.set_all_attribute_inheritance(page, enabled))
+            for widget in page.attribute_inputs.values():
+                button = widget._drawing_override
+                button.changed.connect(lambda: self.update_inheritance_checkbox(page))
+                button.activated.connect(lambda *_: self.update_inheritance_checkbox(page))
             if item and 'drawing_attributes' in item:
                 self.restore_attribute_fields(page.attribute_inputs, item['drawing_attributes'])
+            self.update_inheritance_checkbox(page)
         self.sync_role_pages()
         self.update_page_title(page)
         return page
@@ -245,6 +254,9 @@ class MeasurementWorkflow(RoleDrawingOperations):
         group = QGroupBox('属性・測量情報（この図面）')
         form = QFormLayout(group)
         fields = {}
+        if page is not None:
+            page.inherit_all_attributes = QCheckBox('すべて施行地から継承')
+            form.addRow(page.inherit_all_attributes)
         for key, label, original_name in FIELDS:
             if use_land_fields:
                 widget = getattr(self, original_name)
@@ -266,6 +278,18 @@ class MeasurementWorkflow(RoleDrawingOperations):
         else:
             layout.addWidget(group)
         return fields
+
+    def set_all_attribute_inheritance(self, page, enabled):
+        for key, widget in page.attribute_inputs.items():
+            if enabled or inherits_land_value(widget, key):
+                set_land_value_inheritance(widget, key, enabled)
+
+    @staticmethod
+    def update_inheritance_checkbox(page):
+        checkbox = page.inherit_all_attributes
+        with QSignalBlocker(checkbox):
+            checkbox.setChecked(all(inherits_land_value(widget, key)
+                                    for key, widget in page.attribute_inputs.items()))
 
     def add_attributes(self, layout, role):
         self.attribute_inputs[role] = self.make_attribute_fields(layout, use_land_fields=True)
@@ -349,6 +373,7 @@ class MeasurementWorkflow(RoleDrawingOperations):
                 if not shared:
                     migrated = land
                 self.restore_attribute_fields(page.attribute_inputs, migrated)
+                self.update_inheritance_checkbox(page)
         self.sync_role_pages()
         from .unified_project import source_key, feature_uid
         for page in self.shuis + self.haisuis:

@@ -1,6 +1,7 @@
 """Exercise data-defined names, metadata, inheritance and batch exports in QGIS."""
 from pathlib import Path
 import os, json, tempfile, copy
+from lxml import etree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 exec((ROOT / 'tests/measurement_integration.py').read_text(encoding='utf-8').split('from RingyoZumenMaker.main import Main')[0])
@@ -150,6 +151,43 @@ updated.run(test=True)
 assert updated.attribute_values('work', updated.role_pages['work'])['forest_owner'] == ['更新所有者']
 assert all(updated.role_pages[role][0].name_edit.text() == 'land-A' for role in ('ex_polygon', 'ex_line', 'work'))
 print('LIVE ATTRIBUTE AND ALL ROLE NAME INHERITANCE OK', flush=True)
+
+# The work checkbox applies to figure metadata and reflects individual changes.
+dock.attribute_inputs['land']['application_number'].setText('LAND-089')
+work.attribute_inputs['application_number'].setText('WORK-001')
+other_work = dock.add_role_page('work')
+assert not work.inherit_all_attributes.isChecked()
+work.inherit_all_attributes.setChecked(True)
+assert work.inherit_all_attributes.isChecked()
+assert not other_work.inherit_all_attributes.isChecked()
+assert all(not widget.isEnabled() for widget in work.attribute_inputs.values())
+assert work.name_edit._drawing_override.toProperty().asExpression() == '@rz_land_name'
+dock.remove_role_page(other_work)
+restored.apply_configuration(json.loads(json.dumps(dock.configuration_data())))
+restored_work = restored.role_pages['work'][0]
+assert restored_work.inherit_all_attributes.isChecked()
+assert restored_work.attribute_inputs['application_number'].text() == 'WORK-001'
+dock.fileName.setFilePath(str(out / 'inherit-all'))
+all_inherited = DrawingService(request_from_dock(dock))
+result = all_inherited.run()
+assert all_inherited.attribute_values('work', all_inherited.role_pages['work']) == (
+    all_inherited.attribute_values('land', all_inherited.role_pages['land']))
+root = ET.HTML(Path(result['HTML']).read_text(encoding='utf-8'))
+assert root.xpath('//*[@id="application_number"]/span[starts-with(@data-option-panel, "work_")]/text()') == ['LAND-089']
+button = restored_work.attribute_inputs['application_number']._drawing_override
+button.menu().aboutToShow.emit()
+action = next(a for a in button.menu().actions() if a.text() == '施行地の値を継承')
+action.trigger()
+assert not restored_work.inherit_all_attributes.isChecked()
+assert restored_work.attribute_inputs['application_number'].isEnabled()
+assert not restored_work.attribute_inputs['forest_owner'].isEnabled()
+action.trigger()
+assert restored_work.inherit_all_attributes.isChecked()
+restored_work.inherit_all_attributes.setChecked(False)
+assert all(widget.isEnabled() for widget in restored_work.attribute_inputs.values())
+assert restored_work.attribute_inputs['application_number'].text() == 'WORK-001'
+print('WORK CHECKBOX, CONFIG ROUNDTRIP, HTML AND INDIVIDUAL INHERITANCE OK', flush=True)
+
 restored.resize(1000, 850)
 restored.tabWidget.setCurrentWidget(restored.work_tab)
 restored.show()
