@@ -2,7 +2,7 @@
 import copy
 from decimal import Decimal
 from pathlib import Path
-from qgis.core import QgsProject, QgsCoordinateReferenceSystem, QgsProcessingFeedback, QgsProcessingMultiStepFeedback
+from qgis.core import QgsProject, QgsCoordinateReferenceSystem, QgsProcessingFeedback
 from qgis.PyQt.QtCore import QDate
 from .drawing_inputs import DrawingRequest, DrawingInput, InputValue, DrawingError, DrawingCancelled, FIELDS
 from .drawing_core import DrawingOperations, RoleDrawingOperations
@@ -18,11 +18,29 @@ class _Progress:
         self.service.feedback.setProgress(value)
 
 
-class _CalculationFeedback(QgsProcessingMultiStepFeedback):
-    """Keep model internals in debug logs while forwarding errors and cancellation."""
+class _CalculationFeedback(QgsProcessingFeedback):
+    """Forward model messages and cancellation without forwarding model progress."""
     def __init__(self, feedback):
-        super().__init__(1, feedback)
+        super().__init__()
         self.target = feedback
+        feedback.canceled.connect(self.cancel)
+        if feedback.isCanceled():
+            self.cancel()
+
+    def reportError(self, error, fatalError=False):
+        self.target.reportError(error, fatalError)
+
+    def pushWarning(self, message):
+        self.target.pushWarning(message)
+
+    def pushDebugInfo(self, message):
+        self.target.pushDebugInfo(message)
+
+    def pushCommandInfo(self, message):
+        self.target.pushCommandInfo(message)
+
+    def pushConsoleInfo(self, message):
+        self.target.pushConsoleInfo(message)
 
     def pushInfo(self, message):
         self.target.pushDebugInfo(message)

@@ -102,10 +102,8 @@ class DrawingOperations:
             self.xy_table_rows = []
             self.line_xy_table_rows = []
             self.total_line_length = 0.0
-            self.progressBar.setValue(20)
-
             self.htmlValues = {}
-            self.progressBar.setValue(40)
+            self.progressBar.setValue(5)
 
             if not self.map_make(test=test):
                 self.progressBar.setValue(0)
@@ -119,12 +117,12 @@ class DrawingOperations:
                 self.success = True
                 return
 
-            self.progressBar.setValue(60)
+            self.progressBar.setValue(85)
 
             if not self.copy_assets():
                 self.progressBar.setValue(0)
                 return
-            self.progressBar.setValue(80)
+            self.progressBar.setValue(90)
 
             if not self.make_html():
                 self.progressBar.setValue(0)
@@ -136,6 +134,7 @@ class DrawingOperations:
                 self.progressBar.setValue(0)
                 return
 
+            self.progressBar.setValue(95)
             if self.preserve_active_project and self.outputMode.currentIndex() == 0 and metadata(QgsProject.instance()):
                 QgsProject.instance().clear()
                 closed = True
@@ -1680,11 +1679,14 @@ class DrawingOperations:
         self._editable_projects = EditableProjects(self, self.output_dir(), getattr(self, "_project_snapshot", None)) if not test and self.outputMode.currentIndex() == 0 else None
         self.line_xy_table_rows = []
         self.total_line_length = 0.0
+        polygon_count = len(self.shuis) if self.isShui.isChecked() else 0
+        line_count = len(self.haisuis) if self.isHaisui.isChecked() else 0
+        input_count = max(1, polygon_count + line_count)
         if self.isShui.isChecked():
             total_length = 0.0
             total_area = 0
             self.xy_table_rows = []
-            for page in self.shuis:
+            for input_index, page in enumerate(self.shuis, 1):
                 values = page.values()
                 page.pt_layer = None
                 page.line_layer = None
@@ -1760,6 +1762,7 @@ class DrawingOperations:
                         return False
                     if not self.export_layout_image(layout, f"shui_{page.index}"):
                         return False
+                self.progressBar.setValue(5 + round(40 * input_index / input_count))
 
             self.htmlValues['shui_length'] = self.format_length(total_length)
             self.htmlValues['area'] = self.format_area_int(total_area)
@@ -1767,7 +1770,7 @@ class DrawingOperations:
             self.htmlValues['area_ha'] = self.format_area_ha(total_area)
         
         if self.isHaisui.isChecked():
-            for page in self.haisuis:
+            for input_index, page in enumerate(self.haisuis, polygon_count + 1):
                 values = page.values()
                 page.pt_layer = None
                 page.line_layer = None
@@ -1831,6 +1834,7 @@ class DrawingOperations:
                         return False
                     if not self.export_layout_image(layout, f"haisui_{page.index}"):
                         return False
+                self.progressBar.setValue(5 + round(40 * input_index / input_count))
 
         if not test and self.isShui.isChecked():
             perimeter_layers = []
@@ -1952,7 +1956,8 @@ class DrawingOperations:
             return False
 
         self.set_location_picture_paths(layout, style_dir)
-        if not self.set_location_label_text(layout):
+        compartment = self.location_forest_compartment()
+        if not self.set_location_label_text(layout, compartment):
             return False
 
         map_item = layout.itemById("地図 1")
@@ -1980,7 +1985,7 @@ class DrawingOperations:
             return False
 
         self.htmlValues["rinshohan"] = self.rinshohan.text()
-        safe_rinshohan = self.safe_file_name(self.htmlValues["rinshohan"])
+        safe_rinshohan = self.safe_file_name(compartment)
         output_path = (
             self.output_dir()
             / f"{safe_rinshohan} - 位置図.pdf"
@@ -2139,7 +2144,10 @@ class DrawingOperations:
 
         return True
 
-    def set_location_label_text(self, layout):
+    def location_forest_compartment(self):
+        return self.clean_html_text(self.rinshohan.text()).strip()
+
+    def set_location_label_text(self, layout, compartment):
         title_label = layout.itemById("位置図タイトル")
         if not isinstance(title_label, QgsLayoutItemLabel):
             QMessageBox.warning(
@@ -2150,7 +2158,7 @@ class DrawingOperations:
             return False
 
         parts = [
-            self.clean_html_text(self.rinshohan.text()).strip(),
+            compartment,
             self.clean_html_text(self.sanrinshoyusha.text()).strip(),
         ]
         title_label.setText("　".join(part for part in parts if part))
@@ -2430,6 +2438,16 @@ class DrawingOperations:
 
 
 class RoleDrawingOperations:
+    def location_forest_compartment(self):
+        compartment = super().location_forest_compartment()
+        if compartment:
+            return compartment
+        work_compartments = dict.fromkeys(
+            value for drawing in self.role_drawings if drawing['role'] == 'work'
+            for value in drawing['attributes']['forest_compartment']
+        )
+        return '、'.join(work_compartments)
+
     def apply_layer_color(self, layer, color, include_labels=False):
         # Keep every measurement label provider; a simple-label replacement would
         # discard the secondary measurement labels.
@@ -2454,7 +2472,7 @@ class RoleDrawingOperations:
                 'pages': [page], 'attributes': self.attribute_values('work', [page]), 'role': 'work'})
         from .editable_projects import EditableProjects
         self._editable_projects = EditableProjects(self, self.output_dir(), getattr(self, '_project_snapshot', None)) if not test and self.outputMode.currentIndex() == 0 else None
-        for drawing in self.role_drawings:
+        for drawing_index, drawing in enumerate(self.role_drawings, 1):
             layers = []
             for page in drawing['pages']:
                 color = QColor('blue') if page.role.startswith('ex_') else QColor('black')
@@ -2466,8 +2484,11 @@ class RoleDrawingOperations:
             layout = self.create_layout(target_layers=layers)
             if layout is None: return False
             if not test and not self.export_layout_image(layout, drawing['panel']): return False
+            self.progressBar.setValue(45 + round(30 * drawing_index / len(self.role_drawings)))
         if test: return True
-        if self.isIchizu.isChecked() and not self.export_location_pdf(): return False
+        if self.isIchizu.isChecked():
+            if not self.export_location_pdf(): return False
+            self.progressBar.setValue(80)
         return self.save_result_layers_to_geopackage()
 
     def make_html(self, write_file=True):
