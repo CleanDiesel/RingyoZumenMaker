@@ -120,7 +120,9 @@ class DrawingAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterBoolean('WORK_HAS_WIDTH', '付帯工作物：幅を表示', defaultValue=True))
         self.addParameter(QgsProcessingParameterNumber('WORK_WIDTH', '付帯工作物：幅（m）',
             type=QgsProcessingParameterNumber.Double, defaultValue=1, minValue=.01))
-        self.addParameter(QgsProcessingParameterString('WORK_TYPE', '付帯工作物：種別', defaultValue='排水', optional=True))
+        work_type = QgsProcessingParameterString('WORK_TYPE', '付帯工作物：種別', defaultValue='排水', optional=True)
+        work_type.setFlags(work_type.flags() | Qgis.ProcessingParameterFlag.Hidden)
+        self.addParameter(work_type)
         for prefix, title in (('LAND', '施行地・除地の図面'), ('WORK', '付帯工作物の図面')):
             for key, label, _ in FIELDS:
                 default = QDate.currentDate().toString('yyyy-MM-dd') if key.endswith('_date') else ''
@@ -362,7 +364,7 @@ def parameters_from_dock(dock):
         params[prefix + '_NAME'] = column_value(item.get('name', ''), prop)
         if role == 'ex_line': params['EX_LINE_WIDTH'] = item['width']
         if role == 'work':
-            params.update(WORK_WIDTH=item['width'], WORK_HAS_WIDTH=item['has_width'], WORK_TYPE=item['type'])
+            params.update(WORK_WIDTH=item['width'], WORK_HAS_WIDTH=item['has_width'])
             for key, _, _ in FIELDS:
                 literal, prop = unpack(item.get('drawing_attributes', {}).get(key, ''))
                 params['WORK_' + key.upper()] = column_value(literal, prop)

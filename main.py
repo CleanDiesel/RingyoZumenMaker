@@ -163,6 +163,7 @@ class MeasurementBase(DrawingOperations, ProjectSession, QDockWidget, FORM_CLASS
         feedback.progressChanged.connect(lambda value: dock.progressBar.setValue(round(value)))
         self.open_output_tab()
         self.clear_output_log()
+        self.progressBar.setValue(0)
         try:
             if not self.validate_inputs(): return
             if not test and self.outputMode.currentIndex() == 0 and not self.settle_project_edits(): return
@@ -258,24 +259,24 @@ class MeasurementBase(DrawingOperations, ProjectSession, QDockWidget, FORM_CLASS
         return pages
 
     def serialize_haisui_pages(self):
-        pages = []
-        for page in self.haisuis:
-            values = page.values()
-            pages.append({
-                "name": values.get("name", ""),
-                "drawing_uid": page.drawing_uid,
-                "type": values.get("type", ""),
-                "width": values.get("haba", 0.0),
-                "has_width": bool(values.get("has_haba", True)),
-                "deduct_area": bool(values.get("is_jochi")),
-                "layer": self.layer_reference(values.get("point_layer")),
-                "filter_expression": values.get("filter_exp", ""),
-                "point_name_expression": values.get("sokuten_label_exp", ""),
-                "point_name_expressions": values.get("sokuten_label_expressions", []),
-                "primary_point_name_index": values.get("primary_label_index", 0),
-                "sort_expression": values.get("sort_exp", ""),
-            })
-        return pages
+        return [self.serialize_haisui_page(page) for page in self.haisuis]
+
+    def serialize_haisui_page(self, page):
+        values = page.values()
+        return {
+            "name": values.get("name", ""),
+            "drawing_uid": page.drawing_uid,
+            "type": values.get("type", ""),
+            "width": values.get("haba", 0.0),
+            "has_width": bool(values.get("has_haba", True)),
+            "deduct_area": bool(values.get("is_jochi")),
+            "layer": self.layer_reference(values.get("point_layer")),
+            "filter_expression": values.get("filter_exp", ""),
+            "point_name_expression": values.get("sokuten_label_exp", ""),
+            "point_name_expressions": values.get("sokuten_label_expressions", []),
+            "primary_point_name_index": values.get("primary_label_index", 0),
+            "sort_expression": values.get("sort_exp", ""),
+        }
 
     def configuration_data(self):
         return {

@@ -121,7 +121,7 @@ class MeasurementWorkflow(RoleDrawingOperations):
             group = QGroupBox(label)
             column = QVBoxLayout(group)
             button = QPushButton(label + 'を追加')
-            button.clicked.connect(lambda checked=False, role=role: self.add_role_page(role))
+            button.clicked.connect(lambda checked=False, role=role: self.add_role_page_from_button(role))
             column.addWidget(button)
             box = InputTabs(); box.setMinimumHeight(450)
             column.addWidget(box)
@@ -130,12 +130,25 @@ class MeasurementWorkflow(RoleDrawingOperations):
         self.tabWidget.addTab(tab, title)
         return tab
 
+    def add_role_page_from_button(self, role):
+        source = self.role_boxes[role].currentWidget()
+        if role != 'work' or source is None:
+            return self.add_role_page(role)
+
+        item = self.serialize_haisui_page(source)
+        item.pop('drawing_uid')
+        item['name_property'] = source.name_edit._drawing_override.toProperty().toVariant()
+        item['drawing_attributes'] = self.serialize_attribute_fields(source.attribute_inputs)
+        return self.add_role_page(role, item)
+
     def add_role_page(self, role, item=None):
         from .main import ShuiPage, HaisuiPage
         pages, box = self.role_pages[role], self.role_boxes[role]
         page = ShuiPage(len(pages) + 1, self) if role in ('land', 'ex_polygon') else HaisuiPage(len(pages) + 1, self, required_width=role == 'ex_line')
         page.role = role
         form = page.layout()
+        if role == 'work':
+            form.setRowVisible(page.type_edit, False)
         row_index, field_role = form.getWidgetPosition(page.name_edit)
         form.removeWidget(page.name_edit)
         form.setWidget(row_index, field_role, override_row(page.name_edit, 'name', '名前',
@@ -156,9 +169,9 @@ class MeasurementWorkflow(RoleDrawingOperations):
         box.setCurrentIndex(len(pages) - 1)
         if item:
             page.drawing_uid = item.get('drawing_uid') or page.drawing_uid
+            page.point_layer.setLayer(self.resolve_layer_reference(item.get('layer')))
             page.name_edit.setText(str(item.get('name', '')))
             restore_value(page.name_edit, {'value': item.get('name', ''), 'property': item.get('name_property', {})})
-            page.point_layer.setLayer(self.resolve_layer_reference(item.get('layer')))
             page.filter_exp.setExpression(str(item.get('filter_expression', '')))
             page.sort_exp.setExpression(str(item.get('sort_expression', '')))
             if hasattr(page, 'part_exp'):
