@@ -4,6 +4,7 @@ from decimal import Decimal
 from pathlib import Path
 from qgis.core import QgsProject, QgsCoordinateReferenceSystem, QgsProcessingFeedback
 from qgis.PyQt.QtCore import QDate
+from qgis import utils as qgis_utils
 from .drawing_inputs import DrawingRequest, DrawingInput, InputValue, DrawingError, DrawingCancelled, FIELDS
 from .drawing_core import DrawingOperations, RoleDrawingOperations
 from .project_session import ProjectSession
@@ -50,7 +51,7 @@ class _CalculationFeedback(QgsProcessingFeedback):
 
 
 class DrawingService(RoleDrawingOperations, DrawingOperations, ProjectSession):
-    def __init__(self, request, feedback=None, preserve_active_project=False):
+    def __init__(self, request, feedback=None, preserve_active_project=False, iface=None):
         self.request = request
         self.config = copy.deepcopy(request.config)
         self.feedback = feedback if feedback is not None else QgsProcessingFeedback()
@@ -58,7 +59,7 @@ class DrawingService(RoleDrawingOperations, DrawingOperations, ProjectSession):
         self.preserve_active_project = preserve_active_project
         self.progressBar = _Progress(self)
         self.success = False
-        self.iface = None
+        self.iface = iface if iface is not None else qgis_utils.iface
         self.render_project = QgsProject()
         self.render_project.setTransformContext(QgsProject.instance().transformContext())
         self._editable_projects = None
