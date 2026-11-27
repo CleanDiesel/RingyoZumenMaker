@@ -50,7 +50,6 @@ class RingyoZumenMakerPlugin:
             QgsApplication.processingRegistry().removeProvider(self.provider)
             self.provider = None
         if self.dock is not None:
-            self.dock.disconnect_project_signals()
             self.iface.removeDockWidget(self.dock)
             self.dock.deleteLater()
             self.dock = None

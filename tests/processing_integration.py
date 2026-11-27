@@ -121,7 +121,7 @@ simple['OUTPUT']=str(root/'dock-simple')
 simple_result=processing.run(ALGORITHM_ID,simple,context=context)
 assert '個別所有者A' in Path(simple_result['HTML']).read_text(encoding='utf-8')
 print('SINGLE DOCK INPUT MAPS TO VISIBLE COLUMNS OK',flush=True)
-dock.disconnect_project_signals();project.clear();registry.removeProvider(provider)
+project.clear();registry.removeProvider(provider)
 from RingyoZumenMaker.plugin import RingyoZumenMakerPlugin
 plugin=RingyoZumenMakerPlugin(None)
 plugin.initProcessing();plugin.initProcessing()

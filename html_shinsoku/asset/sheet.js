@@ -32,6 +32,7 @@
     pageControls.insertBefore(pageStatus, nextPage);
   }
   const baseTitle = document.title;
+  const siteTitle = baseTitle.replace(/(?:^|\s*-\s*)実測図\s*$/, '');
   const drawingIndices = [...select.options].map((option, i) => option.value ? i : -1).filter(i => i >= 0);
   let pageIndex = 0;
   let calculationSheets = [];
@@ -228,7 +229,7 @@
     previousDrawing.disabled = select.selectedIndex === drawingIndices[0];
     nextDrawing.disabled = select.selectedIndex === drawingIndices[drawingIndices.length - 1];
     const option = select.options[select.selectedIndex];
-    document.title = option?.value ? `${baseTitle.replace(/\s*-\s*実測図\s*$/, '')} - ${option.textContent.trim()} - 実測図` : baseTitle;
+    document.title = option?.value ? [siteTitle, option.textContent.trim(), '実測図'].filter(Boolean).join(' - ') : baseTitle;
     reflow();
   }
   previousPage?.addEventListener('click', () => { pageIndex--; showPage(); });

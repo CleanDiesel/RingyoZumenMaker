@@ -1,7 +1,5 @@
 """Project restoration, rendering contexts and editable-project snapshots."""
-import copy
 from contextlib import contextmanager
-from pathlib import Path
 
 from qgis.PyQt.QtWidgets import QMessageBox
 from qgis.core import QgsProject, QgsVectorFileWriter
@@ -60,26 +58,6 @@ class ProjectSession:
         item = max(maps, key=lambda item: item.sizeWithUnits().width() * item.sizeWithUnits().height())
         return item.scale() * layout.pageCollection().page(0).pageSize().width() / (150 * self.paper_factor())
 
-    def restore_project_settings(self, *_):
-        project = QgsProject.instance()
-        info = metadata(project)
-        if not info:
-            return
-        config = copy.deepcopy(info["config"])
-        base = Path(project.fileName()).parent
-        config["output"]["directory"] = str((base / config["output"]["directory"]).resolve())
-        for name in ("assignment_ortho",):
-            value = config["output"].get(name)
-            if value and not Path(value).is_absolute():
-                config["output"][name] = str((base / value).resolve())
-        self.apply_configuration(config)
-        from .unified_project import UID
-        for layer in project.mapLayers().values():
-            identity = str(layer.customProperty("rz/source_key", ""))
-            if identity in config.get("selected_inputs", {}) and hasattr(layer, "getFeatures"):
-                selected = set(config["selected_inputs"][identity])
-                layer.selectByIds([f.id() for f in layer.getFeatures() if str(f[UID]) in selected])
-
     def settle_project_edits(self):
         project = QgsProject.instance()
         layers = [layer for layer in project.mapLayers().values()
@@ -115,8 +93,9 @@ class ProjectSession:
         if not snapshot.read(str(path)):
             raise OSError("現在のプロジェクトの保存結果を検証できません")
         managed = set(metadata(project).get("datasets", {}).values())
+        input_ids = {layer.id() for layer in self.location_input_point_layers()}
         for layer in project.mapLayers().values():
-            if layer.providerType() != "memory" or layer.id() in managed:
+            if layer.providerType() != "memory" or layer.id() in managed or layer.id() in input_ids:
                 continue
             # User-added scratch data belong to the editable QGZ, not the managed GPKG.
             saved = snapshot.mapLayer(layer.id())

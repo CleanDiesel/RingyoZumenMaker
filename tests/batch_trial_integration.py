@@ -166,7 +166,6 @@ for trial in (True, False):
     if trial: assert not list(gui_folder.iterdir())
     else: assert (gui_folder/'index.html').is_file()
 print('ORDINARY GUI TRIAL AND EXECUTION SHARE THE READABLE SUMMARY OK', flush=True)
-dock.disconnect_project_signals()
 registry.removeProvider(provider)
 print('PASS', flush=True)
 os._exit(0)

@@ -92,26 +92,23 @@ for prefix, role, label in ROLES:
 assert all(item['name'] == '' for group in ('polygons', 'lines')
            for item in algorithm.request(params, context).config[group]['items'])
 print('WHITESPACE NAMES HIDDEN AND OMITTED-PARAMETER DEFAULTS RETAINED OK', flush=True)
-dock.disconnect_project_signals()
 
 # Clearing a formerly named object must also suppress the label in a retained
 # QGIS style/theme when regenerating an existing editable project.
 named_params = dict(default_params, OUTPUT=str(root / 'regenerate'), CREATE_PROJECT=True)
 named_service = DrawingService(algorithm.request(named_params, context))
 named_result = named_service.run()
-assert project.read(named_result['PROJECT'])
 from RingyoZumenMaker.unified_project import metadata
 from RingyoZumenMaker.drawing_inputs import DrawingRequest
-saved_config = metadata(project)['config']
-saved_config['output']['directory'] = str(root / 'regenerate')
-saved_layers = {}
+import json
+saved_config = json.loads(Path(named_result['CONFIG']).read_text(encoding='utf-8'))
 for group in ('polygons', 'lines'):
     for item in saved_config[group]['items']:
         item['name'] = ''
         item['name_property'] = {}
-        saved_layers[item['drawing_uid']] = project.mapLayer(item['layer']['id'])
-blank_service = DrawingService(DrawingRequest(saved_config, saved_layers), preserve_active_project=True)
+blank_service = DrawingService(DrawingRequest(saved_config, named_service.request.layers), preserve_active_project=True)
 blank_service.run()
+assert project.read(named_result['PROJECT'])
 info = metadata(project)
 for drawing in info['layouts']:
     style_name = '図面:' + drawing['key']

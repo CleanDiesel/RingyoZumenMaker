@@ -77,9 +77,9 @@ class EditableProjects:
         self.engine = UnifiedProjects(owner, directory, snapshot=snapshot)
 
     def capture(self, layout, name, output, persistent_layers=()):
-        from qgis.core import QgsLayoutItemMap, QgsMapLayerStyle, QgsVectorLayer, QgsField
+        from qgis.core import QgsLayoutItemMap, QgsMapLayerStyle, QgsProject, QgsVectorLayer, QgsField
         from qgis.PyQt.QtCore import QVariant
-        from .unified_project import UID
+        from .unified_project import UID, metadata, source_key
         import uuid
         key = name
         for prefix, pages in (("shui", self.owner.shuis), ("haisui", self.owner.haisuis)):
@@ -87,11 +87,16 @@ class EditableProjects:
                 if name == f"{prefix}_{page.index}":
                     key = prefix + ":" + page.drawing_uid
         layers = []
+        frame = None
+        datasets = (metadata(QgsProject.instance()) or {}).get('datasets', {})
+        background_keys = {layer_id: key for key, layer_id in datasets.items() if key.startswith('background:')}
         for item in layout.items():
             if not isinstance(item, QgsLayoutItemMap):
                 continue
+            size = layout.pageCollection().page(0).pageSize()
+            frame = {'long_edge_mm': max(size.width(), size.height()), 'scale': item.scale()}
+            overrides = item.layerStyleOverrides()
             for index, layer in enumerate(item.layers()):
-                dataset_key = "background:" + layer.id()
                 if layer in persistent_layers or (name != "location" and isinstance(layer, QgsVectorLayer)):
                     dataset_key = "output:" + key + ":" + str(index)
                     for prefix, pages in (("shui", self.owner.shuis), ("haisui", self.owner.haisuis)):
@@ -104,13 +109,22 @@ class EditableProjects:
                         layer.updateFields()
                         uid_index = layer.fields().indexFromName(UID)
                         layer.dataProvider().changeAttributeValues({f.id(): {uid_index: str(uuid.uuid5(uuid.NAMESPACE_URL, dataset_key + ":" + str(f.id())))} for f in layer.getFeatures()})
-                self.engine.add_dataset(dataset_key, layer)
-                style = QgsMapLayerStyle()
-                style.readFromLayer(layer)
+                else:
+                    dataset_key = background_keys.get(layer.id())
+                    if dataset_key is None:
+                        dataset_key = 'background:' + source_key(layer)
+                        if dataset_key in background_keys.values():
+                            dataset_key += ':' + layer.id()
+                        background_keys[layer.id()] = dataset_key
+                if self.engine.add_dataset(dataset_key, layer) is None:
+                    continue
+                style = QgsMapLayerStyle(overrides.get(layer.id(), ''))
+                if not style.isValid():
+                    style.readFromLayer(layer)
                 layers.append((layer.id(), dataset_key, style))
         drawing = next((d for d in getattr(self.owner, "role_drawings", []) if d["panel"] == name), None)
         title = drawing["title"] if drawing else "位置図" if name == "location" else name
-        self.engine.capture(layout, key, title, output, layers, {"folder": name, "title": title})
+        self.engine.capture(layout, key, title, output, layers, {"folder": name, "title": title}, frame)
 
     def save(self):
         project, info = self.engine.save()
@@ -150,3 +164,4 @@ class EditableProjects:
         self.owner._generated_project_path = self.engine.project_path
         project.clear()
         self.engine.old_layers.clear()
+        self.engine.datasets.clear()

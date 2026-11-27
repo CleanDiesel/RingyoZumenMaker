@@ -10,6 +10,7 @@ from .drawing_core import DrawingOperations, RoleDrawingOperations
 from .project_session import ProjectSession
 from .drawing_overrides import resolve_values, resolve_attributes, resolve_folder_name
 from .polygon_groups import polygon_items
+from .unified_project import source_key
 
 
 class _Progress:
@@ -173,7 +174,8 @@ class DrawingService(RoleDrawingOperations, DrawingOperations, ProjectSession):
     @staticmethod
     def layer_reference(layer):
         if layer is None: return None
-        return {'id': layer.id(), 'name': layer.name(), 'source': layer.source(), 'provider': layer.providerType()}
+        return {'id': layer.id(), 'name': layer.name(), 'source': layer.source(),
+                'provider': layer.providerType(), 'source_key': source_key(layer)}
 
     def attribute_values(self, role, pages):
         attributes = self.land_attributes if role == 'land' else pages[0].literal_attributes

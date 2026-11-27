@@ -53,21 +53,17 @@ assert Path(saved['output']['directory']) == root
 assert saved['output']['folder_name']['property']
 print('GUI FIELD OVERRIDE, CONFIG ROUNDTRIP AND NAMED FOLDER EXPORT OK', flush=True)
 
-# Reopen packaged settings: the parent is still the parent, so the name must
-# not be appended twice when a saved QGIS project is regenerated.
+# Explicitly loading input.config keeps the parent of the named folder.
 packaged = QgsProject()
 assert packaged.read(result['PROJECT'])
 info = metadata(packaged)
-pack_config = copy.deepcopy(info['config'])
-assert pack_config['output']['directory'] == '../..'
-pack_config['output']['directory'] = str((Path(result['PROJECT']).parent / pack_config['output']['directory']).resolve())
-pack_layers = {item['drawing_uid']: packaged.mapLayer(item['layer']['id'])
-               for group in ('polygons', 'lines') for item in pack_config[group]['items']}
-reopened = DrawingService(DrawingRequest(pack_config, pack_layers))
+assert 'config' not in info and any(k.startswith('input:') for k in info['datasets'])
+assert restored.load_config_file(result['CONFIG'])
+reopened = DrawingService(request_from_dock(restored))
 reopened_result = reopened.run(test=True)
 assert Path(reopened_result['OUTPUT']) == root / '現場A'
 assert not (root / '現場A/現場A').exists()
-print('SAVED QGIS PROJECT RESOLVES PARENT WITHOUT DOUBLE NESTING OK', flush=True)
+print('EXPLICIT CONFIG LOAD RESOLVES PARENT WITHOUT DOUBLE NESTING OK', flush=True)
 
 registry = QgsApplication.processingRegistry()
 provider = DrawingProvider()
@@ -138,7 +134,5 @@ except DrawingError:
 blank = DrawingService(algorithm.request(dict(base_params, OUTPUT_NAME=''), context))
 assert Path(blank.run(test=True)['OUTPUT']) == root
 print('EMPTY NAME COMPATIBILITY, MULTIPLE NAMES AND INVALID NAMES OK', flush=True)
-dock.disconnect_project_signals()
-restored.disconnect_project_signals()
 print('PASS', flush=True)
 os._exit(0)

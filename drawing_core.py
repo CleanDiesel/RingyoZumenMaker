@@ -5,6 +5,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 from numbers import Number
 from html import escape
+from time import sleep
 import os, json, math, re, shutil, tempfile, unicodedata, uuid
 from lxml import etree as ET
 from qgis.PyQt.QtCore import QDate, QVariant
@@ -26,6 +27,20 @@ from .polygon_geometry import reconstruct_polygon_layers, validate_polygon_verti
 from .map_frame import validate_map_frame, rendered_map_bounds
 
 OUTPUT_MANIFEST_NAME = ".ringyo_zumen_outputs.json"
+
+
+def replace_output_file(source, destination):
+    for delay in (0.1, 0.25, 0.5, None):
+        try:
+            os.replace(source, destination)
+            return
+        except OSError as error:
+            if getattr(error, 'winerror', None) not in (32, 33):
+                raise
+            if delay is None:
+                raise OSError(f"ファイルを更新できません。表示中のPDFやQGISで開いている出力ファイルを閉じてから再実行してください。\n{error}") from error
+            sleep(delay)
+
 
 class _Errors:
     @staticmethod
@@ -90,6 +105,10 @@ class DrawingOperations:
                     if self.preserve_active_project and metadata(QgsProject.instance()):
                         snapshot_directory = tempfile.TemporaryDirectory(prefix="measurement-snapshot-")
                         self._project_snapshot = self.snapshot_project(Path(snapshot_directory.name) / "snapshot.qgz")
+                    elif self.preserve_active_project:
+                        previous_project = final_output_dir / 'qgz' / self.project_file_name()
+                        if previous_project.is_file():
+                            self._project_snapshot = previous_project
             if not test:
                 staging_dir = Path(tempfile.mkdtemp(
                     prefix=".ringyo_zumen_tmp_",
@@ -207,16 +226,13 @@ class DrawingOperations:
         staging_dir = Path(staging_dir)
         final_output_dir = Path(final_output_dir)
         rollback_dir = staging_dir / ".rollback"
+        manifest_source = staging_dir / OUTPUT_MANIFEST_NAME
         staged_files = [
             path
             for path in staging_dir.rglob("*")
-            if path.is_file() and rollback_dir not in path.parents
+            if path.is_file() and path != manifest_source and rollback_dir not in path.parents
         ]
-        current_paths = {
-            path.relative_to(staging_dir)
-            for path in staged_files
-            if path.name != OUTPUT_MANIFEST_NAME
-        }
+        current_paths = {path.relative_to(staging_dir) for path in staged_files}
         previous_paths = self.previous_generated_output_paths(final_output_dir)
         previous_existing_paths = {
             path for path in previous_paths
@@ -226,7 +242,6 @@ class DrawingOperations:
         retained = {p for p in previous_existing_paths if p.parts and p.parts[0] == "qgz"} if self.outputMode.currentIndex() == 1 else set()
         previous_existing_paths -= retained
         manifest_paths = retained | current_paths
-        manifest_source = staging_dir / OUTPUT_MANIFEST_NAME
         self.write_output_manifest(manifest_source, manifest_paths)
         staged_files.append(manifest_source)
 
@@ -244,7 +259,7 @@ class DrawingOperations:
                         continue
                     backup_path = rollback_dir / relative_path
                     backup_path.parent.mkdir(parents=True, exist_ok=True)
-                    os.replace(target_path, backup_path)
+                    replace_output_file(target_path, backup_path)
                     committed.append({"target": target_path, "backup": backup_path, "installed": False})
             if backup_generated and previous_existing_paths:
                 backup_root = final_output_dir / "backup"
@@ -267,7 +282,7 @@ class DrawingOperations:
                         continue
                     backup_path = backup_batch_dir / relative_path
                     backup_path.parent.mkdir(parents=True, exist_ok=True)
-                    os.replace(source_path, backup_path)
+                    replace_output_file(source_path, backup_path)
                     backed_up.append((source_path, backup_path))
 
             for source_path in staged_files:
@@ -279,7 +294,7 @@ class DrawingOperations:
                 if target_path.exists():
                     backup_path = rollback_dir / relative_path
                     backup_path.parent.mkdir(parents=True, exist_ok=True)
-                    os.replace(target_path, backup_path)
+                    replace_output_file(target_path, backup_path)
 
                 record = {
                     "target": target_path,
@@ -287,7 +302,7 @@ class DrawingOperations:
                     "installed": False,
                 }
                 committed.append(record)
-                os.replace(source_path, target_path)
+                replace_output_file(source_path, target_path)
                 record["installed"] = True
         except OSError as e:
             for record in reversed(committed):
@@ -668,7 +683,7 @@ class DrawingOperations:
                 elem.set("title", self.clean_html_text(value))
 
         title = root.xpath("//title")[0]
-        title.text = f"{self.htmlValues['rinshohan']} - 実測図"
+        title.text = ' - '.join(filter(None, (self.clean_html_text(self.htmlValues['rinshohan']).strip(), '実測図')))
 
         if self.isShui.isChecked():
             for page in self.shuis:
@@ -975,28 +990,27 @@ class DrawingOperations:
                 f" ≃ {self.format_area_int(exclusion_area)}m²"
             )
 
-        if work_polygons and exclusion_terms:
+        if work_polygons:
             result_area_ha = self.format_area_ha(result_area)
-            displayed_work_area = self.format_area_int(work_area)
-            displayed_exclusion_area = self.format_area_int(exclusion_area)
             displayed_result_area = self.format_area_int(result_area)
-            result_symbol = self.displayed_equality_symbol(
-                Decimal(displayed_work_area) - Decimal(displayed_exclusion_area),
-                displayed_result_area,
-            )
             hectare_symbol = self.displayed_equality_symbol(
                 Decimal(displayed_result_area) / Decimal("10000"),
                 result_area_ha,
             )
-            result_area_parts = [
-                self.latex_quantity(
-                    work_area, r"\mathrm{m}^{2}", self.format_area_int
-                ),
-                ("−", "-"),
-                self.latex_quantity(
-                    exclusion_area, r"\mathrm{m}^{2}", self.format_area_int
-                ),
-                result_symbol,
+            result_area_parts = []
+            if exclusion_terms:
+                displayed_work_area = self.format_area_int(work_area)
+                displayed_exclusion_area = self.format_area_int(exclusion_area)
+                result_area_parts.extend([
+                    self.latex_quantity(work_area, r"\mathrm{m}^{2}", self.format_area_int),
+                    ("−", "-"),
+                    self.latex_quantity(exclusion_area, r"\mathrm{m}^{2}", self.format_area_int),
+                    self.displayed_equality_symbol(
+                        Decimal(displayed_work_area) - Decimal(displayed_exclusion_area),
+                        displayed_result_area,
+                    ),
+                ])
+            result_area_parts.extend([
                 self.latex_quantity(
                     result_area, r"\mathrm{m}^{2}", self.format_area_int
                 ),
@@ -1005,13 +1019,9 @@ class DrawingOperations:
                     f"{result_area_ha}ha",
                     rf"\color{{#d00000}}{{{result_area_ha}\,\mathrm{{ha}}}}",
                 ),
-            ]
+            ])
             right_rows.append(("面積：", result_area_parts, ""))
-            self.log_calculation_detail(
-                f"面積: {self.format_area_int(work_area)}m² - "
-                f"{self.format_area_int(exclusion_area)}m² = "
-                f"{self.format_area_int(result_area)}m² ≃ {result_area_ha}ha"
-            )
+            self.log_calculation_detail("面積: " + " ".join(plain for plain, _ in result_area_parts))
 
         if not write_to_html:
             return
@@ -1973,8 +1983,12 @@ class DrawingOperations:
             return False
 
         map_item.setCrs(self.crs.crs())
-        map_item.setLayers(self.location_map_layers(line_layers))
+        backgrounds, styles = self.location_backgrounds(line_layers)
+        map_item.setLayers(line_layers + backgrounds)
         map_item.setKeepLayerSet(True)
+        if styles:
+            map_item.setLayerStyleOverrides(styles)
+            map_item.setKeepLayerStyles(True)
 
         extent = self.combined_layer_extent(line_layers)
         if extent is not None:
@@ -2171,18 +2185,27 @@ class DrawingOperations:
                 return item
         return None
 
-    def location_map_layers(self, line_layers):
-        canvas_layers = []
-        if self.iface is not None:
-            canvas_layers = list(self.iface.mapCanvas().layers())
-
+    def location_backgrounds(self, line_layers):
+        project = QgsProject.instance()
+        info = metadata(project) or {}
+        managed = {layer_id for key, layer_id in info.get('datasets', {}).items() if not key.startswith('background:')}
+        descriptor = next((entry for entry in info.get('layouts', []) if entry['key'] == 'location'), None)
+        themes = project.mapThemeCollection()
+        theme = ''
+        if descriptor:
+            layout = project.layoutManager().layoutByName(descriptor['layout'])
+            map_item = self.first_layout_map_item(layout) if layout is not None else None
+            theme = map_item.followVisibilityPresetName() if map_item and map_item.followVisibilityPreset() else descriptor['theme']
+        if theme and themes.hasMapTheme(theme):
+            candidates = themes.mapThemeVisibleLayers(theme)
+            styles = themes.mapThemeStyleOverrides(theme)
+        else:
+            candidates = self.iface.mapCanvas().layers() if self.iface is not None else []
+            styles = {}
         excluded_layers = set(line_layers + self.location_input_point_layers())
-        background_layers = [
-            layer
-            for layer in canvas_layers
-            if layer not in excluded_layers
-        ]
-        return line_layers + background_layers
+        backgrounds = [layer for layer in candidates
+                       if layer.isValid() and layer not in excluded_layers and layer.id() not in managed]
+        return backgrounds, {layer.id(): styles[layer.id()] for layer in backgrounds if layer.id() in styles}
 
     def location_input_point_layers(self):
         layers = []
@@ -2493,7 +2516,7 @@ class RoleDrawingOperations:
 
     def make_html(self, write_file=True):
         root = ET.parse(str(Path(__file__).parent / 'html_shinsoku/index.html'), ET.HTMLParser())
-        root.xpath('//title')[0].text = (self.rinshohan.text().strip() or '図面') + ' - 実測図'
+        root.xpath('//title')[0].text = ' - '.join(filter(None, (self.rinshohan.text().strip(), '実測図')))
         # Remove template placeholders; every detail belongs to a drawing.
         for node in root.xpath('//*[@data-option-panel="mix"]'):
             if node.get('id') != 'calc': node.getparent().remove(node)

@@ -1,7 +1,7 @@
-"""One editable project, named styles/themes, durable inputs and regeneration metadata."""
-import copy
+"""One editable project, named styles/themes and output metadata."""
 import hashlib
 import json
+from math import isclose
 import os
 import shutil
 import sqlite3
@@ -18,7 +18,7 @@ from qgis.core import (
     QgsMapLayerStyle, QgsMapThemeCollection, QgsPalLayerSettings,
     QgsPrintLayout, QgsProject, QgsProperty, QgsPropertyDefinition,
     QgsReadWriteContext, QgsReferencedRectangle, QgsVectorFileWriter,
-    QgsVectorLayer, QgsGeometryGeneratorSymbolLayer, QgsVariantUtils,
+    QgsVectorLayer, QgsVariantUtils,
 )
 
 from .editable_projects import make_project_references_relative
@@ -48,12 +48,13 @@ def metadata(project):
     except (ValueError, TypeError):
         return None
     if (not isinstance(data, dict) or data.get("format") != "RingyoZumenMaker.project"
-            or data.get("version") != 1):
+            or data.get("version") not in (1, 2)):
         return None
-    config = data.get("config", {})
-    if (not isinstance(config, dict) or config.get("format") != "RingyoZumenMaker.config" or config.get("version") != CONFIG_VERSION
-            or config.get("mode") != "measurement"):
-        return None
+    if data["version"] == 1:
+        config = data.get("config", {})
+        if (not isinstance(config, dict) or config.get("format") != "RingyoZumenMaker.config"
+                or config.get("version") != CONFIG_VERSION or config.get("mode") != "measurement"):
+            return None
     return data
 
 
@@ -65,7 +66,11 @@ def source_key(layer):
     for key, layer_id in info.get("datasets", {}).items():
         if key.startswith("input:") and layer_id == layer.id():
             return key.split(":", 1)[1]
-    identity = layer.id() if layer.providerType() == "memory" else layer.providerType() + ":" + layer.source()
+    return source_identity(layer.providerType(), layer.source(), layer.id())
+
+
+def source_identity(provider, source, layer_id):
+    identity = layer_id if provider == 'memory' else f'{provider}:{source}'
     return str(uuid.uuid5(uuid.NAMESPACE_URL, identity))
 
 
@@ -157,7 +162,6 @@ class UnifiedProjects:
         self.snapshot = snapshot
         self.copied_ortho = copied_ortho
         self.captures = []
-        self.inputs = {}
         self.datasets = {}
         self.aliases = {}
         self.signatures = {}
@@ -170,6 +174,8 @@ class UnifiedProjects:
             if not self.project.read(str(snapshot)):
                 raise OSError("編集済みプロジェクトの一時保存を読み込めません")
             self.old_metadata = metadata(self.project)
+            if self.old_metadata is None:
+                self.project.clear()
         self.old_layers = {}
         for key, layer_id in (self.old_metadata or {}).get("datasets", {}).items():
             layer = self.project.mapLayer(layer_id)
@@ -182,33 +188,27 @@ class UnifiedProjects:
     def add_dataset(self, key, layer):
         if isinstance(layer, QgsVectorLayer) and layer.featureCount() == 0:
             return None
-        content = signature(layer) if isinstance(layer, QgsVectorLayer) else layer.providerType() + ":" + layer.source()
+        if key.startswith('background:'):
+            content = key
+        else:
+            content = signature(layer) if isinstance(layer, QgsVectorLayer) else layer.providerType() + ":" + layer.source()
         canonical = self.signatures.get(content)
         if canonical is None:
             canonical = key
             self.signatures[content] = canonical
             self.datasets[key] = layer.clone()
-            if key.startswith("input:"):
-                self.datasets[key].setCustomProperty("rz/source_key", key.split(":", 1)[1])
+            if key.startswith('background:') and key not in self.old_layers:
+                saved = self.project.mapLayer(layer.id())
+                if saved is not None:
+                    self.old_layers[key] = saved
         self.aliases[key] = canonical
         return canonical
 
-    def capture(self, layout, key, title, output, layers, drawing=None):
+    def capture(self, layout, key, title, output, layers, drawing=None, frame=None):
         document = QDomDocument()
         document.appendChild(layout.writeXml(document, QgsReadWriteContext()))
         self.captures.append({"key": key, "title": title, "output": output,
-                              "xml": document.toString(), "layers": layers, "drawing": drawing})
-
-    def prepare_inputs(self):
-        for group, pages in (("polygons", self.owner.shuis), ("lines", self.owner.haisuis)):
-            for page in pages:
-                layer = page.point_layer.currentLayer()
-                if layer is None:
-                    continue
-                key = "input:" + source_key(layer)
-                canonical = self.add_dataset(key, full_input(layer))
-                registration_uid = getattr(page, 'registration_uid', page.drawing_uid)
-                self.inputs[group + ":" + registration_uid] = canonical
+                              "xml": document.toString(), "layers": layers, "drawing": drawing, "frame": frame})
 
     def _write_data(self):
         self.qgz_dir.mkdir(parents=True, exist_ok=True)
@@ -318,7 +318,9 @@ class UnifiedProjects:
         return warnings
 
     def save(self):
-        self.prepare_inputs()
+        inputs = {source_key(layer): layer for layer in self.owner.location_input_point_layers()}
+        for identity, layer in inputs.items():
+            self.add_dataset('input:' + identity, full_input(layer))
         unnamed_object_layers = {
             f'output:{prefix}:{page.drawing_uid}:line_layer'
             for prefix, pages in (('shui', getattr(self.owner, 'shuis', [])),
@@ -376,9 +378,10 @@ class UnifiedProjects:
             self._auxiliary(layer)
             canonical_layers[key] = layer
 
-        obsolete = [layer.id() for layer in project.mapLayers().values()
-                    if layer in self.old_layers.values() and layer not in canonical_layers.values()]
-        project.removeMapLayers(obsolete)
+        output_ids = {layer.id() for layer in canonical_layers.values()}
+        obsolete_ids = {layer.id() for key, layer in self.old_layers.items() if not key.startswith('background:')} - output_ids
+        input_ids = {layer.id() for layer in self.owner.location_input_point_layers()}
+        project.removeMapLayers(list((obsolete_ids | input_ids) & (set(project.mapLayers()) - output_ids)))
         # User-added GPKG layers must refer to the new file, not its retired version.
         for layer in project.mapLayers().values():
             if isinstance(layer, QgsVectorLayer) and layer not in canonical_layers.values() and "ringyo_zumen.gpkg|" in layer.source():
@@ -422,18 +425,24 @@ class UnifiedProjects:
                         project.mapThemeCollection().renameMapTheme(theme_name, title)
                         theme_name = title
             if old_layout is not None:
-                old_map = (self.old_metadata or {}).get("config", {}).get("map", {})
-                new_map = self.owner.configuration_data()["map"]
-                location = key == "location"
-                paper_key = "location_paper" if location else "paper"
-                scale_key = "location_scale" if location else "scale"
-                old_paper, new_paper = old_map.get(paper_key, "A4"), new_map[paper_key]
-                if old_paper != new_paper:
-                    self.owner.resize_location_layout(layout, 2 ** (0.5 if new_paper == "A3" else -0.5))
-                if old_map.get(scale_key) != new_map.get(scale_key):
+                frame = capture['frame']
+                old_frame = previous.get('frame')
+                if old_frame and frame:
+                    factor = frame['long_edge_mm'] / old_frame['long_edge_mm']
+                    if not isclose(factor, 1):
+                        self.owner.resize_location_layout(layout, factor)
+                    scale_changed = not isclose(old_frame['scale'], frame['scale'], rel_tol=1e-6)
+                else:
+                    old_map = (self.old_metadata or {}).get('config', {}).get('map', {})
+                    new_map = self.owner.configuration_data()['map']
+                    paper_key, scale_key = ('location_paper', 'location_scale') if key == 'location' else ('paper', 'scale')
+                    if old_map and old_map.get(paper_key) != new_map[paper_key]:
+                        self.owner.resize_location_layout(layout, 2 ** (0.5 if new_map[paper_key] == 'A3' else -0.5))
+                    scale_changed = bool(old_map) and old_map.get(scale_key) != new_map[scale_key]
+                if scale_changed and frame:
                     for item in layout.items():
                         if isinstance(item, QgsLayoutItemMap) and item.customProperty("rz/generated_map", False):
-                            item.setScale(new_map[scale_key])
+                            item.setScale(frame['scale'])
             generated_theme_names.add(theme_name)
             visible = []
             for _, dataset_key, captured_style in capture["layers"]:
@@ -445,15 +454,6 @@ class UnifiedProjects:
                     current = QgsMapLayerStyle()
                     current.readFromLayer(layer)
                     captured_style.writeToLayer(layer)
-                    if key == "aggregate" and dataset_key == "output:aggregate" and self.inputs.get("polygon"):
-                        # Show the actual removed part without persisting an intermediate dataset.
-                        source = canonical_layers[self.inputs["polygon"]]
-                        expression = ("difference(transform(geometry(get_feature('" + source.id() + "','" + UID + "',\"" + UID + "\")), '" +
-                                      source.crs().authid() + "', '" + layer.crs().authid() + "'), $geometry)")
-                        generator = QgsGeometryGeneratorSymbolLayer.create({"geometryModifier": expression, "SymbolType": "Fill"})
-                        from qgis.core import QgsFillSymbol
-                        generator.setSubSymbol(QgsFillSymbol.createSimple({"color": "0,80,255,90", "outline_color": "0,80,255,255", "outline_width": "0.3"}))
-                        layer.renderer().symbol().appendSymbolLayer(generator)
                     self._auxiliary(layer)
                     adjusted = QgsMapLayerStyle()
                     adjusted.readFromLayer(layer)
@@ -530,7 +530,7 @@ class UnifiedProjects:
                             shutil.copy2(source, target)
                         item.setPicturePath(str(target))
             descriptors.append({"key": key, "layout": layout.name(), "theme": theme_name,
-                                "output": capture["output"], "drawing": capture["drawing"]})
+                                "output": capture["output"], "drawing": capture["drawing"], "frame": capture['frame']})
         old_generated_themes = {item["theme"] for item in (self.old_metadata or {}).get("layouts", [])}
         for layout in list(project.layoutManager().layouts()):
             if layout.customProperty("rz/key", "") and layout.customProperty("rz/key") not in generated_layout_keys:
@@ -540,29 +540,15 @@ class UnifiedProjects:
 
         if descriptors:
             project.mapThemeCollection().applyTheme(descriptors[0]["theme"], root, model)
-        config = copy.deepcopy(self.owner.configuration_data())
         # Applying a QGIS style can replace custom properties as well as symbology.
         # Reattach identities after the last style switch.
         for key, layer in canonical_layers.items():
             identities = [alias for alias, canonical in self.aliases.items() if canonical == key]
             layer.setCustomProperty("rz/keys", json.dumps(identities))
-            input_identity = next((alias.split(":", 1)[1] for alias in identities if alias.startswith("input:")), None)
+            input_identity = next((alias.split(':', 1)[1] for alias in identities if alias.startswith('input:')), None)
             if input_identity:
-                layer.setCustomProperty("rz/source_key", input_identity)
-        for role, key in self.inputs.items():
-            group, page_id = role.split(":", 1)
-            layer = canonical_layers.get(key)
-            for item in config[group]["items"]:
-                if item["drawing_uid"] == page_id:
-                    item["layer"] = self.owner.layer_reference(layer) if layer else None
-        config["selected_inputs"] = {}
-        for role, canonical in self.inputs.items():
-            generated = self.datasets[canonical]
-            identity = str(generated.customProperty("rz/source_key", ""))
-            selected = set(generated.selectedFeatureIds())
-            config["selected_inputs"][identity] = [str(f[UID]) for f in generated.getFeatures() if f.id() in selected]
-        config["output"]["directory"] = "../.." if getattr(self.owner, 'output_subdirectory', '') else ".."
-        info = {"format": "RingyoZumenMaker.project", "version": 1, "config": config,
+                layer.setCustomProperty('rz/source_key', input_identity)
+        info = {"format": "RingyoZumenMaker.project", "version": 2,
                 "layouts": descriptors, "tables": tables,
                 "datasets": {alias: canonical_layers[canonical].id() for alias, canonical in self.aliases.items()}}
         project.writeEntry(SCOPE, "regeneration", json.dumps(json_value(info), ensure_ascii=False))

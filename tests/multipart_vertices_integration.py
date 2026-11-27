@@ -175,8 +175,8 @@ finally:
 assert page.area == 300 and page.length == 120
 print('GUI CHOICE OF ONE MULTIPART, TWO OBJECTS OR THREE SEPARATE POLYGONS OK', flush=True)
 
-# Persist the original GUI registration against the packaged input, even when
-# it expands to several logical output polygons with different internal UIDs.
+# Store the original GUI registration in input.config when it expands into
+# several logical output polygons with different internal UIDs.
 page.object_exp.setExpression('"src_fid"')
 dock.outputMode.setCurrentIndex(0)
 dock.fileName.setFilePath(str(folder / 'gui-grouped-project'))
@@ -186,23 +186,17 @@ packaged = QgsProject()
 assert packaged.read(grouped_result['PROJECT'])
 from RingyoZumenMaker.unified_project import metadata
 info = metadata(packaged)
-saved_item = info['config']['polygons']['items'][0]
+assert 'config' not in info and any(k.startswith('input:') for k in info['datasets'])
+assert restored.load_config_file(grouped_result['CONFIG'])
+saved_item = restored.configuration_data()['polygons']['items'][0]
 assert saved_item['drawing_uid'] == page.drawing_uid
 assert saved_item['object_expression'] == '"src_fid"'
 assert saved_item['part_expression'] == '"group_key"'
-saved_layer = packaged.mapLayer(saved_item['layer']['id'])
-assert saved_layer is not None and saved_layer.isValid()
-assert saved_layer.providerType() == 'ogr'
-assert 'ringyo_zumen.gpkg' in saved_layer.source()
-from RingyoZumenMaker.drawing_inputs import DrawingRequest
-saved_config = info['config']
-saved_config['output']['directory'] = str(folder)
-reopened = DrawingService(DrawingRequest(saved_config, {saved_item['drawing_uid']: saved_layer}))
+assert saved_item['layer']['id'] == out.id()
+reopened = DrawingService(request_from_dock(restored))
 reopened.run(test=True)
 assert [p.area for p in reopened.role_pages['land']] == [200, 100]
-print('GUI GROUPED QGIS PROJECT REOPENS WITH PACKAGED INPUTS OK', flush=True)
-dock.disconnect_project_signals()
-restored.disconnect_project_signals()
+print('GUI GROUPED QGIS PROJECT REGENERATES FROM EXPLICIT CONFIG OK', flush=True)
 print('GUI MULTIPART REGISTRATION, CONFIG ROUNDTRIP AND PROCESSING COPY OK', flush=True)
 print('PASS', flush=True)
 os._exit(0)

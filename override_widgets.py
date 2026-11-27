@@ -1,6 +1,6 @@
 """QGIS property buttons alongside literal drawing inputs."""
-from qgis.PyQt.QtWidgets import QWidget, QHBoxLayout
-from qgis.PyQt.QtCore import QCoreApplication
+from qgis.PyQt.QtWidgets import QWidget, QHBoxLayout, QDateEdit
+from qgis.PyQt.QtCore import QCoreApplication, QEvent, QObject
 from qgis.core import QgsExpressionContextGenerator, QgsProperty, QgsPropertyDefinition
 from qgis.gui import QgsPropertyOverrideButton
 from .drawing_overrides import context_for, unpack
@@ -27,7 +27,55 @@ def set_land_value_inheritance(widget, key, enabled):
     button.changed.emit()
 
 
-def override_row(widget, key, label, layer_getter, inherit=False):
+class OverrideMenuOptions(QObject):
+    def __init__(self, menu, widget, key, inherit, copy_first):
+        super().__init__(menu)
+        self.widget = widget
+        self.key = key
+        self.inherit = inherit
+        self.copy_first = copy_first
+        menu.installEventFilter(self)
+
+    def eventFilter(self, menu, event):
+        if event.type() != QEvent.Type.Show:
+            return False
+        # QGIS rebuilds the native actions in aboutToShow.
+        for action in menu.actions():
+            if action.property('rz_custom_override'):
+                menu.removeAction(action)
+                action.deleteLater()
+        if self.inherit:
+            action = self.add_action(menu, '施行地の値を継承')
+            action.setCheckable(True)
+            action.setChecked(inherits_land_value(self.widget, self.key))
+            action.triggered.connect(lambda checked: set_land_value_inheritance(self.widget, self.key, checked))
+        if self.copy_first:
+            source = self.copy_first()
+            action = self.add_action(menu, '1つ目の付帯工作物の値で上書き')
+            action.setEnabled(source is not None)
+            if source is not None:
+                action.triggered.connect(lambda: self.copy_field(source))
+        return False
+
+    @staticmethod
+    def add_action(menu, label):
+        before = next(iter(menu.actions()), None)
+        action = menu.addAction(label)
+        action.setProperty('rz_custom_override', True)
+        menu.insertAction(before, action)
+        return action
+
+    def copy_field(self, source):
+        button = self.widget._drawing_override
+        button.setToProperty(source._drawing_override.toProperty())
+        if isinstance(self.widget, QDateEdit):
+            self.widget.setDate(source.date())
+        else:
+            self.widget.setText(source.text())
+        button.changed.emit()
+
+
+def override_row(widget, key, label, layer_getter, inherit=False, copy_first=None):
     row = QWidget()
     layout = QHBoxLayout(row)
     layout.setContentsMargins(0, 0, 0, 0)
@@ -46,19 +94,8 @@ def override_row(widget, key, label, layer_getter, inherit=False):
     button.menu().aboutToShow.connect(label_expression_menu)
     button.changed.connect(lambda: widget.setEnabled(not button.isActive()))
     button.activated.connect(lambda *_: widget.setEnabled(not button.isActive()))
-    if inherit:
-        def inheritance_menu():
-            menu = button.menu()
-            for old in list(menu.actions()):
-                if old.text() == '施行地の値を継承':
-                    menu.removeAction(old)
-                    old.deleteLater()
-            action = menu.addAction('施行地の値を継承')
-            action.setCheckable(True)
-            action.setChecked(inherits_land_value(widget, key))
-            action.triggered.connect(lambda checked: set_land_value_inheritance(widget, key, checked))
-            menu.insertAction(menu.actions()[0], action)
-        button.menu().aboutToShow.connect(inheritance_menu)
+    if inherit or copy_first:
+        button._menu_options = OverrideMenuOptions(button.menu(), widget, key, inherit, copy_first)
     layout.addWidget(widget, 1)
     layout.addWidget(button)
     widget._drawing_override = button

@@ -94,24 +94,30 @@ assert not messages, messages
 assert (out/'index.html').is_file(), main.progressBar.value()
 files = list((out/'qgz').glob('*.qgz'))
 assert len(files) == 1, files
-assert project.read(str(files[0]))
-info = metadata(project)
+rendered = QgsProject()
+assert rendered.read(str(files[0]))
+info = metadata(rendered)
 assert info and len(info['layouts']) == 4, info
-assert all(l.isValid() for l in project.mapLayers().values())
+assert 'config' not in info
+input_layers = [rendered.mapLayer(v) for k, v in info['datasets'].items() if k.startswith('input:')]
+assert sorted(l.name() for l in input_layers) == sorted((points.name(), ex_points.name()))
+assert all(l.providerType() == 'ogr' and 'ringyo_zumen.gpkg' in l.source() for l in input_layers)
+assert all(l.isValid() for l in rendered.mapLayers().values())
+assert main.load_config_file(out/'input.config')
 assert main.shuis[0].point_layer.currentLayer() is not None
 assert main.scale.scale() == 1000 and main.locationScale.scale() == 5000
 print('FIRST EXPORT OK', len(info['layouts']), flush=True)
 first_areas = [(p.area, p.length) for p in main.shuis]
 # Adjust both independent point-label providers and a layout without saving.
 descriptor = next(d for d in info['layouts'] if d['drawing']['folder'] == 'land')
-layout = project.layoutManager().layoutByName(descriptor['layout'])
+layout = rendered.layoutManager().layoutByName(descriptor['layout'])
 map_item = next(i for i in layout.items() if isinstance(i, QgsLayoutItemMap))
 map_item.setMapRotation(17)
 map_item.setScale(1250)
 custom = QgsLayoutItemLabel(layout); custom.setText('手動で追加'); custom.setId('user-note'); layout.addLayoutItem(custom)
 custom.attemptMove(QgsLayoutPoint(20, 8)); custom.attemptResize(QgsLayoutSize(40, 6))
 key = 'output:shui:' + main.role_pages['land'][0].drawing_uid + ':pt_layer'
-layer = project.mapLayer(info['datasets'][key])
+layer = rendered.mapLayer(info['datasets'][key])
 layer.styleManager().setCurrentStyle('図面:' + descriptor['key'])
 aux = layer.auxiliaryLayer()
 assert aux is not None
@@ -130,6 +136,8 @@ assert layer.changeAttributeValue(f.id(), layer.fields().indexFromName('auxiliar
 assert layer.changeAttributeValue(f.id(), layer.fields().indexFromName('auxiliary_storage_' + fields[iy]), 18.5)
 assert layer.commitChanges()
 assert aux.commitChanges()
+assert rendered.write()
+rendered.clear()
 input_layer = main.shuis[0].point_layer.currentLayer()
 assert input_layer.startEditing()
 source_feature = next(input_layer.getFeatures())
@@ -137,20 +145,22 @@ assert input_layer.changeGeometry(source_feature.id(), QgsGeometry.fromPointXY(Q
 main.on_submit()
 assert not messages, messages
 assert main.progressBar.value() == 100
-info2 = metadata(project)
+assert rendered.read(str(files[0]))
+info2 = metadata(rendered)
 assert info2 and len(info2['layouts']) == 4
-layout = project.layoutManager().layoutByName(descriptor['layout'])
+layout = rendered.layoutManager().layoutByName(descriptor['layout'])
 assert layout.itemById('user-note').text() == '手動で追加'
 map_item = next(i for i in layout.items() if isinstance(i, QgsLayoutItemMap))
 assert abs(map_item.mapRotation() - 17) < 1e-6
 assert abs(map_item.scale() - 1250) < 1e-4
-layer = project.mapLayer(info2['datasets'][key])
+layer = rendered.mapLayer(info2['datasets'][key])
 layer.styleManager().setCurrentStyle('図面:' + descriptor['key'])
 values = [f.attributes() for f in layer.auxiliaryLayer().getFeatures()]
 assert any(12.5 in v and 18.5 in v for v in values), values
 assert min(f.geometry().asPoint().x() for f in layer.getFeatures()) == -10
 assert '10500' in (out/'index.html').read_text(encoding='utf-8')
-assert all(l.isValid() for l in project.mapLayers().values())
+assert all(l.isValid() for l in rendered.mapLayers().values())
+rendered.clear()
 print('REGENERATION AND MULTIPLE LABEL POSITIONS OK', flush=True)
 # No-project mode with backup must not move or alter any existing project file.
 import hashlib
@@ -171,9 +181,10 @@ main.on_submit()
 assert not messages, messages
 assert main.progressBar.value() == 100
 assert main.paper.currentText() == 'A3' and main.locationScale.scale() == 7500
-info_a3 = metadata(project)
+assert rendered.read(main.last_result['PROJECT'])
+info_a3 = metadata(rendered)
 for descriptor in info_a3['layouts']:
-    layout = project.layoutManager().layoutByName(descriptor['layout'])
+    layout = rendered.layoutManager().layoutByName(descriptor['layout'])
     size = layout.pageCollection().page(0).pageSize()
     if descriptor['key'] == 'location':
         assert min(size.width(), size.height()) > 290, (size.width(), size.height())
@@ -182,6 +193,7 @@ for descriptor in info_a3['layouts']:
     else:
         assert 211 < size.width() < 213, size.width()
 assert 'work' not in main.attribute_inputs
+rendered.clear()
 assert [p.attribute_inputs['forest_owner'].text() for p in main.role_pages['work']] == ['工作物所有者1', '工作物所有者2']
 assert main.role_pages['work'][1].attribute_inputs['forest_compartment'].text() == '"name"'
 for page in main.role_pages['work']:
@@ -236,7 +248,7 @@ assert '10180' in html, 'gross - excluded polygon - excluded line'
 assert not (land_only/'qgz').exists()
 print('LAND AND EXCLUSION LINE ONLY OK', flush=True)
 # An ancillary-work-only export must support is_selected() and retain selection
-# when the generated QGZ is opened again.
+# when input.config is explicitly loaded with the source points available.
 main.apply_configuration(settings)
 assert main.attribute_inputs['land']['application_number'].text() == '000123-AB'
 assert main.role_pages['work'][1].attribute_inputs['application_number'].text() == '000456-CD'
@@ -251,13 +263,19 @@ work_only = out/'work-only'; work_only.mkdir()
 main.fileName.setFilePath(str(work_only)); main.outputMode.setCurrentIndex(0); main.isIchizu.setChecked(False)
 main.on_submit()
 assert not messages, messages
-info_work = metadata(project)
+assert rendered.read(main.last_result['PROJECT'])
+info_work = metadata(rendered)
 assert len(info_work['layouts']) == 1
+rendered.clear()
+source.removeSelection()
+assert main.load_config_file(work_only/'input.config')
 assert main.role_pages['work'][0].point_layer.currentLayer().selectedFeatureCount() == 2
 main.on_submit()
 assert not messages, messages
 assert main.progressBar.value() == 100
-assert len(metadata(project)['layouts']) == 1
+assert rendered.read(main.last_result['PROJECT'])
+assert len(metadata(rendered)['layouts']) == 1
+rendered.clear()
 print('WORK ONLY AND SELECTED POINT RESTORATION OK', flush=True)
 # Older configuration files retain their measurements and map into the new roles.
 legacy = copy_settings = json.loads(json.dumps(settings))
@@ -324,7 +342,68 @@ assert (trial/'index.html').read_text(encoding='utf-8') == 'new'
 assert (trial/'manual.txt').read_text(encoding='utf-8') == 'keep'
 print('TRANSACTION ROLLBACK AND OBSOLETE OUTPUT CLEANUP OK', flush=True)
 (out/'test-output.json').write_text(json.dumps({'output': str(out)}, ensure_ascii=False), encoding='utf-8')
-main.disconnect_project_signals()
+main.rinshohan.setText('読み込み前の値')
+assert project.read(str(files[0]))
+assert main.rinshohan.text() == '読み込み前の値'
+reopened = Main()
+assert not reopened.role_pages['land']
+assert reopened.load_config_file(out/'input.config')
+assert not messages, messages
+assert reopened.role_pages['land'][0].point_layer.currentLayer().name() == '測点'
+assert reopened.role_pages['ex_polygon'][0].point_layer.currentLayer().name() == '除地点'
+assert reopened.attribute_inputs['land']['application_number'].text() == '000123-AB'
+
+# A background added to a saved location theme must keep its theme style.
+# The current canvas can be displaying a completely different theme.
+from qgis.PyQt.QtGui import QColor
+from RingyoZumenMaker.drawing_service import DrawingService, request_from_dock
+background_path = out / 'theme-background.geojson'
+background_path.write_text(json.dumps({'type': 'FeatureCollection', 'features': [{
+    'type': 'Feature', 'properties': {}, 'geometry': {'type': 'Polygon',
+        'coordinates': [[[141, 44], [143, 44], [143, 46], [141, 46], [141, 44]]]}}]}), encoding='utf-8')
+background = QgsVectorLayer(str(background_path), '位置図テーマの背景', 'ogr')
+decoy = QgsVectorLayer(str(background_path), '現在のキャンバスだけの背景', 'ogr')
+assert background.isValid() and decoy.isValid()
+project.addMapLayers([background, decoy])
+manager = background.styleManager()
+original_style = manager.currentStyle()
+location_style = QgsMapLayerStyle()
+location_style.readFromLayer(background)
+manager.addStyle('位置図の色', location_style)
+manager.setCurrentStyle('位置図の色')
+background.setRenderer(QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({'color': '#157b35'})))
+manager.setCurrentStyle(original_style)
+theme_name = next(d['theme'] for d in metadata(project)['layouts'] if d['key'] == 'location')
+themes = project.mapThemeCollection()
+record = themes.mapThemeState(theme_name)
+entry = QgsMapThemeCollection.MapThemeLayerRecord(background)
+entry.isVisible = True
+entry.usingCurrentStyle = True
+entry.currentStyle = '位置図の色'
+record.addLayerRecord(entry)
+themes.update(theme_name, record)
+
+class Canvas:
+    def layers(self): return [decoy]
+
+class Interface:
+    def mapCanvas(self): return Canvas()
+
+reopened.iface = Interface()
+service = DrawingService(request_from_dock(reopened), iface=reopened.iface)
+backgrounds, overrides = service.location_backgrounds([])
+assert backgrounds == [background]
+cloned_background = background.clone()
+QgsMapLayerStyle(overrides[background.id()]).writeToLayer(cloned_background)
+assert cloned_background.renderer().symbol().color() == QColor('#157b35')
+reopened.outputMode.setCurrentIndex(0)
+reopened.on_submit()
+assert reopened.progressBar.value() == 100 and not messages, messages
+assert 'config' not in metadata(project)
+theme_layers = project.mapThemeCollection().mapThemeVisibleLayers(theme_name)
+assert [layer.name() for layer in theme_layers if layer.providerType() == 'ogr' and layer.source().split('|')[0].endswith('theme-background.geojson')] == ['位置図テーマの背景']
+assert next(out.glob('* - 位置図.pdf')).stat().st_size > 0
+print('LOCATION PDF FOLLOWS SAVED THEME AND BACKGROUND STYLE', flush=True)
 project.clear()
 print('PASS', flush=True)
 os._exit(0)

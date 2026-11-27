@@ -50,13 +50,22 @@ dock.attribute_inputs['land']['survey_date']._drawing_override.setToProperty(Qgs
 work.attribute_inputs['forest_owner']._drawing_override.setToProperty(QgsProperty.fromExpression('@rz_land_forest_owner'))
 work.attribute_inputs['surveyor']._drawing_override.setToProperty(QgsProperty.fromExpression("'個別測量者'"))
 
+def open_override_menu(button):
+    from qgis.PyQt.QtCore import QPoint
+    menu = button.menu()
+    menu.hide()
+    menu.popup(QPoint(40, 40))
+    app.processEvents()
+    menu.hide()
+    return menu
+
 # The actual inheritance menu supports enabling and disabling without changing literals.
 button = work.attribute_inputs['survey_company']._drawing_override
-button.menu().aboutToShow.emit()
+open_override_menu(button)
 action = next(a for a in button.menu().actions() if a.text() == '施行地の値を継承')
 action.trigger()
 assert button.isActive() and not work.attribute_inputs['survey_company'].isEnabled()
-button.menu().aboutToShow.emit()
+open_override_menu(button)
 assert sum(a.text() == '施行地の値を継承' for a in button.menu().actions()) == 1
 
 config = json.loads(json.dumps(dock.configuration_data(), ensure_ascii=False))
@@ -152,41 +161,32 @@ assert updated.attribute_values('work', updated.role_pages['work'])['forest_owne
 assert all(updated.role_pages[role][0].name_edit.text() == 'land-A' for role in ('ex_polygon', 'ex_line', 'work'))
 print('LIVE ATTRIBUTE AND ALL ROLE NAME INHERITANCE OK', flush=True)
 
-# The work checkbox applies to figure metadata and reflects individual changes.
-dock.attribute_inputs['land']['application_number'].setText('LAND-089')
+# Adding a work drawing starts with defaults. Individual values can then be
+# copied explicitly from the first drawing's property menus.
+from qgis.PyQt.QtWidgets import QPushButton
 work.attribute_inputs['application_number'].setText('WORK-001')
-other_work = dock.add_role_page('work')
-assert not work.inherit_all_attributes.isChecked()
-work.inherit_all_attributes.setChecked(True)
-assert work.inherit_all_attributes.isChecked()
-assert not other_work.inherit_all_attributes.isChecked()
-assert all(not widget.isEnabled() for widget in work.attribute_inputs.values())
-assert work.name_edit._drawing_override.toProperty().asExpression() == '@rz_land_name'
-dock.remove_role_page(other_work)
-restored.apply_configuration(json.loads(json.dumps(dock.configuration_data())))
-restored_work = restored.role_pages['work'][0]
-assert restored_work.inherit_all_attributes.isChecked()
-assert restored_work.attribute_inputs['application_number'].text() == 'WORK-001'
-dock.fileName.setFilePath(str(out / 'inherit-all'))
-all_inherited = DrawingService(request_from_dock(dock))
-result = all_inherited.run()
-assert all_inherited.attribute_values('work', all_inherited.role_pages['work']) == (
-    all_inherited.attribute_values('land', all_inherited.role_pages['land']))
-root = ET.HTML(Path(result['HTML']).read_text(encoding='utf-8'))
-assert root.xpath('//*[@id="application_number"]/span[starts-with(@data-option-panel, "work_")]/text()') == ['LAND-089']
-button = restored_work.attribute_inputs['application_number']._drawing_override
-button.menu().aboutToShow.emit()
-action = next(a for a in button.menu().actions() if a.text() == '施行地の値を継承')
-action.trigger()
-assert not restored_work.inherit_all_attributes.isChecked()
-assert restored_work.attribute_inputs['application_number'].isEnabled()
-assert not restored_work.attribute_inputs['forest_owner'].isEnabled()
-action.trigger()
-assert restored_work.inherit_all_attributes.isChecked()
-restored_work.inherit_all_attributes.setChecked(False)
-assert all(widget.isEnabled() for widget in restored_work.attribute_inputs.values())
-assert restored_work.attribute_inputs['application_number'].text() == 'WORK-001'
-print('WORK CHECKBOX, CONFIG ROUNDTRIP, HTML AND INDIVIDUAL INHERITANCE OK', flush=True)
+work.haba_spin.setValue(3.25)
+dock.role_boxes['work'].setCurrentWidget(work)
+next(b for b in dock.work_tab.findChildren(QPushButton) if b.text() == '付帯工作物ラインを追加').click()
+other_work = dock.role_pages['work'][1]
+assert other_work.name_edit.text() == '付帯工作物2'
+assert not other_work.name_edit._drawing_override.isActive()
+assert other_work.attribute_inputs['application_number'].text() == ''
+assert other_work.haba_spin.value() == 1.0
+assert other_work.filter_exp.expression() == ''
+for key, source in {'name': work.name_edit, **work.attribute_inputs}.items():
+    target = other_work.name_edit if key == 'name' else other_work.attribute_inputs[key]
+    source_menu = open_override_menu(source._drawing_override)
+    assert not next(a for a in source_menu.actions() if a.text() == '1つ目の付帯工作物の値で上書き').isEnabled()
+    menu = open_override_menu(target._drawing_override)
+    actions = [a for a in menu.actions() if a.text() == '1つ目の付帯工作物の値で上書き']
+    assert len(actions) == 1 and actions[0].isEnabled()
+    actions[0].trigger()
+    assert target._drawing_override.toProperty().toVariant() == source._drawing_override.toProperty().toVariant(), key
+    assert target.text() == source.text(), key
+assert not hasattr(other_work, 'inherit_all_attributes')
+assert not hasattr(other_work, 'overwrite_from_first')
+print('FIRST WORK OVERRIDE MENU FOR ALL FIELDS OK', flush=True)
 
 restored.resize(1000, 850)
 restored.tabWidget.setCurrentWidget(restored.work_tab)
@@ -194,7 +194,5 @@ restored.show()
 app.processEvents()
 restored.grab().save(str(out / 'override-controls.png'))
 restored.hide()
-dock.disconnect_project_signals()
-restored.disconnect_project_signals()
 print('PASS', flush=True)
 os._exit(0)

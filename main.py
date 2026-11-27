@@ -36,7 +36,7 @@ import unicodedata
 from .drawing_core import DrawingOperations
 from .editable_projects import EditableProjects
 from .project_session import ProjectSession
-from .unified_project import full_input, metadata, checkpoint_package
+from .unified_project import full_input, metadata, checkpoint_package, source_identity, source_key
 from contextlib import contextmanager, ExitStack
 import copy
 import uuid
@@ -102,8 +102,6 @@ class MeasurementBase(DrawingOperations, ProjectSession, QDockWidget, FORM_CLASS
         self.setup_shui_toolbox()
         self.setup_haisui_toolbox()
         self.setup_output_options()
-        QgsProject.instance().readProject.connect(self.restore_project_settings)
-        self.restore_project_settings()
 
         # Dynamic controls above affect the tab's required height.  Preserve
         # that height inside the tab scroll area instead of forcing the whole
@@ -137,14 +135,6 @@ class MeasurementBase(DrawingOperations, ProjectSession, QDockWidget, FORM_CLASS
 
     def project_file_name(self):
         return self.safe_file_name(self.rinshohan.text().strip() or "実測図") + ".qgz"
-
-    def disconnect_project_signals(self):
-        try:
-            QgsProject.instance().readProject.disconnect(self.restore_project_settings)
-        except (TypeError, RuntimeError):
-            pass
-
-
 
     def paper_factor(self):
         return 420 / 297 if self.paper.currentText() == "A3" else 1.0
@@ -212,6 +202,7 @@ class MeasurementBase(DrawingOperations, ProjectSession, QDockWidget, FORM_CLASS
             "name": layer.name(),
             "source": layer.source(),
             "provider": layer.providerType(),
+            "source_key": source_key(layer),
         }
 
     def resolve_layer_reference(self, reference):
@@ -233,6 +224,14 @@ class MeasurementBase(DrawingOperations, ProjectSession, QDockWidget, FORM_CLASS
             for layer in layers:
                 if layer.source() == source and (not provider or layer.providerType() == provider):
                     return layer
+        identity = reference.get('source_key')
+        if not identity and provider and (layer_id if provider == 'memory' else source):
+            identity = source_identity(provider, source, layer_id)
+        packaged_id = (metadata(project) or {}).get('datasets', {}).get(f'input:{identity}') if identity else None
+        if packaged_id:
+            layer = project.mapLayer(packaged_id)
+            if isinstance(layer, QgsVectorLayer) and layer.isValid():
+                return layer
         if name:
             for layer in layers:
                 if layer.name() == name:

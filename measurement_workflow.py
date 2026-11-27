@@ -4,18 +4,18 @@ from pathlib import Path
 from contextlib import contextmanager
 
 from lxml import etree as ET
-from qgis.PyQt.QtCore import QDate, QSignalBlocker
+from qgis.PyQt.QtCore import QDate
 from qgis.PyQt.QtGui import QColor
 from qgis.PyQt.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox, QTabWidget,
-    QPushButton, QLabel, QLineEdit, QDateEdit, QCheckBox, QMessageBox,
+    QPushButton, QLabel, QLineEdit, QDateEdit, QMessageBox,
 )
 
 
 from .drawing_inputs import FIELDS
 from .drawing_core import RoleDrawingOperations
 from .override_widgets import (
-    override_row, saved_value, restore_value, inherits_land_value, set_land_value_inheritance,
+    override_row, saved_value, restore_value,
 )
 from .drawing_overrides import resolve_attributes
 
@@ -121,7 +121,7 @@ class MeasurementWorkflow(RoleDrawingOperations):
             group = QGroupBox(label)
             column = QVBoxLayout(group)
             button = QPushButton(label + 'を追加')
-            button.clicked.connect(lambda checked=False, role=role: self.add_role_page_from_button(role))
+            button.clicked.connect(lambda checked=False, role=role: self.add_role_page(role))
             column.addWidget(button)
             box = InputTabs(); box.setMinimumHeight(450)
             column.addWidget(box)
@@ -130,16 +130,28 @@ class MeasurementWorkflow(RoleDrawingOperations):
         self.tabWidget.addTab(tab, title)
         return tab
 
-    def add_role_page_from_button(self, role):
-        source = self.role_boxes[role].currentWidget()
-        if role != 'work' or source is None:
-            return self.add_role_page(role)
+    def first_work_field(self, page, key):
+        first = next(iter(self.role_pages['work']), None)
+        if first is None or first is page:
+            return None
+        return first.name_edit if key == 'name' else first.attribute_inputs[key]
 
-        item = self.serialize_haisui_page(source)
-        item.pop('drawing_uid')
-        item['name_property'] = source.name_edit._drawing_override.toProperty().toVariant()
-        item['drawing_attributes'] = self.serialize_attribute_fields(source.attribute_inputs)
-        return self.add_role_page(role, item)
+    def restore_role_page_settings(self, page, item):
+        page.point_layer.setLayer(self.resolve_layer_reference(item.get('layer')))
+        page.name_edit.setText(str(item.get('name', '')))
+        restore_value(page.name_edit, {'value': item.get('name', ''), 'property': item.get('name_property', {})})
+        page.filter_exp.setExpression(str(item.get('filter_expression', '')))
+        page.sort_exp.setExpression(str(item.get('sort_expression', '')))
+        if hasattr(page, 'part_exp'):
+            page.part_exp.setExpression(str(item.get('part_expression', '')))
+            page.object_exp.setExpression(str(item.get('object_expression', '')))
+        page.sokuten_labels.set_expressions(item.get('point_name_expressions'), item.get('primary_point_name_index', 0),
+            fallback_expression=str(item.get('point_name_expression', '')))
+        if hasattr(page, 'haba_spin'):
+            page.type_edit.setText(str(item.get('type', '排水')))
+            if page.isHaba is not None:
+                page.isHaba.setChecked(bool(item.get('has_width', True)))
+            page.haba_spin.setValue(float(item.get('width', 1)))
 
     def add_role_page(self, role, item=None):
         from .main import ShuiPage, HaisuiPage
@@ -152,7 +164,8 @@ class MeasurementWorkflow(RoleDrawingOperations):
         row_index, field_role = form.getWidgetPosition(page.name_edit)
         form.removeWidget(page.name_edit)
         form.setWidget(row_index, field_role, override_row(page.name_edit, 'name', '名前',
-                       page.point_layer.currentLayer, inherit=role != 'land'))
+                       page.point_layer.currentLayer, inherit=role != 'land',
+                       copy_first=(lambda: self.first_work_field(page, 'name')) if role == 'work' else None))
         page.point_layer.layerChanged.connect(page.name_edit._drawing_override.setVectorLayer)
         page.point_layer.layerChanged.connect(lambda *_: self.refresh_attribute_layers())
         page.name_edit.setText({'land': '施行地', 'ex_polygon': '除地', 'ex_line': '除地ライン', 'work': '付帯工作物'}[role] + str(len(pages) + 1))
@@ -169,32 +182,11 @@ class MeasurementWorkflow(RoleDrawingOperations):
         box.setCurrentIndex(len(pages) - 1)
         if item:
             page.drawing_uid = item.get('drawing_uid') or page.drawing_uid
-            page.point_layer.setLayer(self.resolve_layer_reference(item.get('layer')))
-            page.name_edit.setText(str(item.get('name', '')))
-            restore_value(page.name_edit, {'value': item.get('name', ''), 'property': item.get('name_property', {})})
-            page.filter_exp.setExpression(str(item.get('filter_expression', '')))
-            page.sort_exp.setExpression(str(item.get('sort_expression', '')))
-            if hasattr(page, 'part_exp'):
-                page.part_exp.setExpression(str(item.get('part_expression', '')))
-                page.object_exp.setExpression(str(item.get('object_expression', '')))
-            page.sokuten_labels.set_expressions(item.get('point_name_expressions'), item.get('primary_point_name_index', 0),
-                fallback_expression=str(item.get('point_name_expression', '')))
-            if hasattr(page, 'haba_spin'):
-                page.type_edit.setText(str(item.get('type', '排水')))
-                if page.isHaba is not None:
-                    page.isHaba.setChecked(bool(item.get('has_width', True)))
-                page.haba_spin.setValue(float(item.get('width', 1)))
+            self.restore_role_page_settings(page, item)
         if role == 'work':
             page.attribute_inputs = self.make_attribute_fields(page.layout(), page=page)
-            page.inherit_all_attributes.toggled.connect(
-                lambda enabled: self.set_all_attribute_inheritance(page, enabled))
-            for widget in page.attribute_inputs.values():
-                button = widget._drawing_override
-                button.changed.connect(lambda: self.update_inheritance_checkbox(page))
-                button.activated.connect(lambda *_: self.update_inheritance_checkbox(page))
             if item and 'drawing_attributes' in item:
                 self.restore_attribute_fields(page.attribute_inputs, item['drawing_attributes'])
-            self.update_inheritance_checkbox(page)
         self.sync_role_pages()
         self.update_page_title(page)
         return page
@@ -267,9 +259,6 @@ class MeasurementWorkflow(RoleDrawingOperations):
         group = QGroupBox('属性・測量情報（この図面）')
         form = QFormLayout(group)
         fields = {}
-        if page is not None:
-            page.inherit_all_attributes = QCheckBox('すべて施行地から継承')
-            form.addRow(page.inherit_all_attributes)
         for key, label, original_name in FIELDS:
             if use_land_fields:
                 widget = getattr(self, original_name)
@@ -282,27 +271,17 @@ class MeasurementWorkflow(RoleDrawingOperations):
                 widget.setCalendarPopup(True)
                 widget.setDate(QDate.currentDate())
             getter = self.land_attribute_layer if page is None else page.point_layer.currentLayer
-            form.addRow(label, override_row(widget, key, label, getter, inherit=page is not None))
+            row = override_row(widget, key, label, getter, inherit=page is not None,
+                               copy_first=(lambda key=key: self.first_work_field(page, key)) if page is not None else None)
             if page is not None:
                 page.point_layer.layerChanged.connect(widget._drawing_override.setVectorLayer)
+            form.addRow(label, row)
             fields[key] = widget
         if isinstance(layout, QFormLayout):
             layout.insertRow(max(0, layout.rowCount() - 1), group)
         else:
             layout.addWidget(group)
         return fields
-
-    def set_all_attribute_inheritance(self, page, enabled):
-        for key, widget in page.attribute_inputs.items():
-            if enabled or inherits_land_value(widget, key):
-                set_land_value_inheritance(widget, key, enabled)
-
-    @staticmethod
-    def update_inheritance_checkbox(page):
-        checkbox = page.inherit_all_attributes
-        with QSignalBlocker(checkbox):
-            checkbox.setChecked(all(inherits_land_value(widget, key)
-                                    for key, widget in page.attribute_inputs.items()))
 
     def add_attributes(self, layout, role):
         self.attribute_inputs[role] = self.make_attribute_fields(layout, use_land_fields=True)
@@ -386,7 +365,6 @@ class MeasurementWorkflow(RoleDrawingOperations):
                 if not shared:
                     migrated = land
                 self.restore_attribute_fields(page.attribute_inputs, migrated)
-                self.update_inheritance_checkbox(page)
         self.sync_role_pages()
         from .unified_project import source_key, feature_uid
         for page in self.shuis + self.haisuis:
