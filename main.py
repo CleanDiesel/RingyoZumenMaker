@@ -158,7 +158,14 @@ class MeasurementBase(DrawingOperations, ProjectSession, QDockWidget, FORM_CLASS
             if not self.validate_inputs(): return
             if not test and self.outputMode.currentIndex() == 0 and not self.settle_project_edits(): return
             service = DrawingService(request_from_dock(self), feedback, preserve_active_project=True, iface=self.iface)
-            self.last_result = service.run(test=test)
+            if service.report_zip_enabled and not test:
+                self._content_widget.setEnabled(False)
+                try:
+                    self.last_result = service.run()
+                finally:
+                    self._content_widget.setEnabled(True)
+            else:
+                self.last_result = service.run(test=test)
             self._generated_scales = service._generated_scales
             self.role_drawings = service.role_drawings
             calculated = {}

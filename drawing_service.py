@@ -68,14 +68,18 @@ class DrawingService(RoleDrawingOperations, DrawingOperations, ProjectSession):
         self._preview_output_base = False
         self._skip_output_validation = False
         settings, output = self.config.get('map', {}), self.config.get('output', {})
+        self.report_zip_enabled = bool(output.get('create_report_zip', False))
+        self.report_zip_target = None
         mapping = {'scale': ('scale', 1000), 'locationScale': ('location_scale', 5000),
                    'paper': ('paper', 'A4'), 'locationPaper': ('location_paper', 'A4'),
                    'ketasu': ('coordinate_decimals', 5), 'hyouOrder': ('xy_table_order', 0),
                    'lengthDecimals': ('length_display_decimals', 1), 'areaDecimals': ('area_display_decimals', 0),
                    'haDecimals': ('hectare_display_decimals', 2), 'isJochikeisan': ('show_deduction', False),
-                   'minEx': ('minimum_exclusion_area_a', 1), 'isIchizu': ('create_location_map', False),
+                   'minEx': ('minimum_exclusion_area_a', 1), 'isIchizu': ('create_location_map', self.report_zip_enabled),
                    'ichizuDirection': ('location_direction', 0)}
         for name, (key, default) in mapping.items(): setattr(self, name, InputValue(settings.get(key, default)))
+        if self.report_zip_enabled:
+            self.isIchizu.saved = True
         self.crs = InputValue(QgsCoordinateReferenceSystem(settings.get('crs', 'EPSG:6678')))
         self.render_project.setCrs(self.crs.crs())
         self.fileName = InputValue(output.get('directory', ''))
@@ -138,7 +142,15 @@ class DrawingService(RoleDrawingOperations, DrawingOperations, ProjectSession):
             if role == 'work':
                 for record in records: self.attribute_values(role, [record])
         self.attribute_values('land', self.role_pages['land'])
-        if not test: Path(self.fileName.filePath()).mkdir(parents=True, exist_ok=True)
+        if not test:
+            directory = Path(self.fileName.filePath())
+            directory.mkdir(parents=True, exist_ok=True)
+            if self.report_zip_enabled:
+                zip_directory = str(self.config['output'].get('report_zip_directory') or '').strip()
+                zip_directory = Path(zip_directory) if zip_directory else directory
+                if not zip_directory.is_dir():
+                    raise DrawingError('報告ZIPの保存先には存在するフォルダを指定してください')
+                self.report_zip_target = zip_directory / (Path(self.project_file_name()).stem + '.zip')
         self.execute(test=test)
         if not self.success: raise DrawingError('実測図を作成できませんでした')
         self.log_calculation_summary(test)
@@ -146,6 +158,8 @@ class DrawingService(RoleDrawingOperations, DrawingOperations, ProjectSession):
         if not test:
             result['HTML'] = str(Path(self.fileName.filePath()) / 'index.html')
             result['CONFIG'] = str(Path(self.fileName.filePath()) / 'input.config')
+            if self.report_zip_enabled:
+                result['ZIP'] = str(self.report_zip_target)
             if self.outputMode.currentIndex() == 0:
                 result['PROJECT'] = str(Path(self.fileName.filePath()) / 'qgz' / self.project_file_name())
         return result

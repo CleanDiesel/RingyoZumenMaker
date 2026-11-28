@@ -425,6 +425,8 @@ class UnifiedProjects:
                         project.mapThemeCollection().renameMapTheme(theme_name, title)
                         theme_name = title
             if old_layout is not None:
+                if key == 'location' and layout.itemById('位置図タイトル') is not None:
+                    self.owner.set_location_label_text(layout, self.owner.location_forest_compartment())
                 frame = capture['frame']
                 old_frame = previous.get('frame')
                 if old_frame and frame:

@@ -88,6 +88,7 @@ class DrawingOperations:
         final_output_dir = Path(self.fileName.filePath())
         staging_dir = None
         snapshot_directory = None
+        pending_report = None
         closed = False
         original_project = QgsProject.instance().fileName()
         self._generated_scales = {}
@@ -147,6 +148,15 @@ class DrawingOperations:
                 self.progressBar.setValue(0)
                 return
 
+            if getattr(self, 'report_zip_enabled', False):
+                from .report_zip import build_report_zip
+                target = self.report_zip_target
+                fd, name = tempfile.mkstemp(prefix='.ringyo_report_', suffix='.tmp', dir=target.parent)
+                os.close(fd)
+                pending_report = Path(name)
+                self.append_output_log('報告ZIP用に図面をPDF化しています…')
+                build_report_zip(self, pending_report)
+
             # 出力フォルダへ自動生成する設定ファイルも、他の生成物と
             # 同じトランザクションとバックアップ対象に含める。
             if not self.save_config_file():
@@ -172,6 +182,9 @@ class DrawingOperations:
                 if not QgsProject.instance().read(str(project_path)):
                     raise OSError("更新したQGZを開けません: " + str(project_path))
                 closed = False
+            if pending_report is not None:
+                replace_output_file(pending_report, self.report_zip_target)
+                self.append_output_log(f'報告ZIP: {self.report_zip_target}')
             temporary_config.unlink(missing_ok=True)
 
             self.append_output_log(f"出力を確定しました: {final_output_dir}")
@@ -187,6 +200,8 @@ class DrawingOperations:
             )
             self.progressBar.setValue(0)
         finally:
+            if pending_report is not None:
+                pending_report.unlink(missing_ok=True)
             if closed and self._project_snapshot:
                 QgsProject.instance().read(str(self._project_snapshot))
                 QgsProject.instance().setFileName(original_project)
@@ -1999,11 +2014,7 @@ class DrawingOperations:
             return False
 
         self.htmlValues["rinshohan"] = self.rinshohan.text()
-        safe_rinshohan = self.safe_file_name(compartment)
-        output_path = (
-            self.output_dir()
-            / f"{safe_rinshohan} - 位置図.pdf"
-        )
+        output_path = self.location_pdf_path()
         if self._editable_projects is not None:
             self._editable_projects.capture(layout, "location", output_path.name,
                 persistent_layers=self.editable_result_layers())
@@ -2022,6 +2033,10 @@ class DrawingOperations:
 
         self.append_output_log(f"位置図PDFを書き込みました: {displayed_path}")
         return True
+
+    def location_pdf_path(self):
+        stem = self.safe_file_name(self.location_forest_compartment())
+        return self.output_dir() / f'{stem} - 位置図.pdf'
 
     def location_line_layers(self):
         layers = []
@@ -2161,6 +2176,9 @@ class DrawingOperations:
     def location_forest_compartment(self):
         return self.clean_html_text(self.rinshohan.text()).strip()
 
+    def location_forest_owner(self):
+        return self.clean_html_text(self.sanrinshoyusha.text()).strip()
+
     def set_location_label_text(self, layout, compartment):
         title_label = layout.itemById("位置図タイトル")
         if not isinstance(title_label, QgsLayoutItemLabel):
@@ -2171,10 +2189,7 @@ class DrawingOperations:
             )
             return False
 
-        parts = [
-            compartment,
-            self.clean_html_text(self.sanrinshoyusha.text()).strip(),
-        ]
+        parts = [compartment, self.location_forest_owner()]
         title_label.setText("　".join(part for part in parts if part))
         title_label.update()
         return True
@@ -2470,6 +2485,16 @@ class RoleDrawingOperations:
             for value in drawing['attributes']['forest_compartment']
         )
         return '、'.join(work_compartments)
+
+    def location_forest_owner(self):
+        for drawing in self.role_drawings:
+            owners = drawing['attributes']['forest_owner']
+            if drawing['role'] == 'land' and owners:
+                return '、'.join(owners)
+        return '、'.join(dict.fromkeys(
+            owner for drawing in self.role_drawings if drawing['role'] == 'work'
+            for owner in drawing['attributes']['forest_owner']
+        ))
 
     def apply_layer_color(self, layer, color, include_labels=False):
         # Keep every measurement label provider; a simple-label replacement would

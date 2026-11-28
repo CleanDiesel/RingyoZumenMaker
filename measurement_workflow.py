@@ -8,7 +8,7 @@ from qgis.PyQt.QtCore import QDate
 from qgis.PyQt.QtGui import QColor
 from qgis.PyQt.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox, QTabWidget,
-    QPushButton, QLabel, QLineEdit, QDateEdit, QMessageBox,
+    QPushButton, QLabel, QLineEdit, QDateEdit, QMessageBox, QCheckBox, QFileDialog,
 )
 
 
@@ -59,12 +59,32 @@ class MeasurementWorkflow(RoleDrawingOperations):
         self.formLayout_3.addRow('出力フォルダ名（任意）', override_row(
             self.output_name, 'output_folder_name', '出力フォルダ名', self.output_attribute_layer))
         self.output_name._drawing_override.setUsageInfo('施行地の対象測点の属性・式から、一つの出力フォルダ名を指定します。施行地がなければ付帯工作物の測点を使います。')
+        self.createReportZip = QCheckBox('作成する（位置図を含む）')
+        self.formLayout_3.addRow('報告ZIP', self.createReportZip)
+        folder = QWidget()
+        row = QHBoxLayout(folder)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.reportZipDirectory = QLineEdit()
+        self.reportZipDirectory.setPlaceholderText('空欄なら出力フォルダに保存')
+        browse = QPushButton('参照…')
+        browse.clicked.connect(self.choose_report_zip_directory)
+        row.addWidget(self.reportZipDirectory, 1)
+        row.addWidget(browse)
+        self.formLayout_3.addRow('報告ZIP保存先', folder)
+        folder.setEnabled(False)
+        self.createReportZip.toggled.connect(folder.setEnabled)
         # Output remains the final tab.
         self.tabWidget.removeTab(self.tabWidget.indexOf(output))
         self.tabWidget.addTab(output, '出力')
         self.tabWidget.setCurrentIndex(0)
         self._role_ui_ready = True
         self.setup_processing_actions()
+
+    def choose_report_zip_directory(self):
+        directory = QFileDialog.getExistingDirectory(
+            self, '報告ZIPの保存先', self.reportZipDirectory.text() or self.fileName.filePath())
+        if directory:
+            self.reportZipDirectory.setText(directory)
 
     def setup_processing_actions(self):
         from qgis.PyQt.QtWidgets import QMenu, QApplication
@@ -316,6 +336,8 @@ class MeasurementWorkflow(RoleDrawingOperations):
         data['attribute_input_mode'] = 'data_defined_per_drawing'
         data['drawing_attributes'] = {'land': self.serialize_attribute_fields(self.attribute_inputs['land'])}
         data['output']['folder_name'] = saved_value(self.output_name, self.output_name.text())
+        data['output']['create_report_zip'] = self.createReportZip.isChecked()
+        data['output']['report_zip_directory'] = self.reportZipDirectory.text().strip()
         for item, page in zip(data['lines']['items'], self.haisuis):
             if page.role == 'work':
                 item['drawing_attributes'] = self.serialize_attribute_fields(page.attribute_inputs)
@@ -338,6 +360,9 @@ class MeasurementWorkflow(RoleDrawingOperations):
         super().apply_configuration(settings)
         folder_literal = restore_value(self.output_name, data.get('output', {}).get('folder_name', ''))
         self.output_name.setText(str(folder_literal or ''))
+        output = data.get('output', {})
+        self.createReportZip.setChecked(bool(output.get('create_report_zip', False)))
+        self.reportZipDirectory.setText(str(output.get('report_zip_directory') or ''))
         for role, box in self.role_boxes.items():
             while box.count():
                 page = box.widget(0); page.hide(); box.removeItem(0); page.deleteLater()

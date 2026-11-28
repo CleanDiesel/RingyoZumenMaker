@@ -157,6 +157,8 @@ class DrawingAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterNumber('LOCATION_SCALE', '位置図の縮尺の分母', type=QgsProcessingParameterNumber.Double, defaultValue=5000, minValue=1))
         self.addParameter(QgsProcessingParameterBoolean('CREATE_PROJECT', '編集用QGZ・GPKGを作成', defaultValue=True))
         self.addParameter(QgsProcessingParameterBoolean('BACKUP', '既存の生成ファイルをバックアップ', defaultValue=False))
+        self.addParameter(QgsProcessingParameterBoolean('REPORT_ZIP', '報告ZIPを作成（位置図を含む）', defaultValue=False))
+        self.addParameter(QgsProcessingParameterString('REPORT_ZIP_DIRECTORY', '報告ZIPの保存先（空欄なら出力先）', optional=True))
         output_folder = QgsProcessingParameterFolderDestination('OUTPUT', '出力フォルダ', optional=True)
         output_folder.setHelp('実行時は指定が必要です。試算時は出力先が空欄でも、フォルダを作成せず計算結果だけをログに表示します。')
         self.addParameter(output_folder)
@@ -173,6 +175,7 @@ class DrawingAlgorithm(QgsProcessingAlgorithm):
         self.addOutput(QgsProcessingOutputHtml('HTML', '実測図'))
         self.addOutput(QgsProcessingOutputFile('CONFIG', '入力設定'))
         self.addOutput(QgsProcessingOutputFile('PROJECT', '編集用QGZ'))
+        self.addOutput(QgsProcessingOutputFile('ZIP', '報告ZIP'))
 
     def grouped_inputs(self, parameters, context, prefix, role, label):
         layer = self.parameterAsVectorLayer(parameters, prefix, context)
@@ -256,6 +259,10 @@ class DrawingAlgorithm(QgsProcessingAlgorithm):
             config['output']['directory'] = output
             if 'OUTPUT_NAME' in parameters:
                 config['output']['folder_name'] = column_input(self.parameterAsString(parameters, 'OUTPUT_NAME', context))
+            if 'REPORT_ZIP' in parameters:
+                config['output']['create_report_zip'] = self.parameterAsBool(parameters, 'REPORT_ZIP', context)
+            if 'REPORT_ZIP_DIRECTORY' in parameters:
+                config['output']['report_zip_directory'] = self.parameterAsString(parameters, 'REPORT_ZIP_DIRECTORY', context)
             layers = {}
             for group in ('polygons', 'lines'):
                 for item in config.get(group, {}).get('items', []):
@@ -272,6 +279,8 @@ class DrawingAlgorithm(QgsProcessingAlgorithm):
                   'drawing_attributes': {'land': self.literal_attributes(parameters, context, 'LAND')},
                   'output': {'directory': output, 'create_qgz': self.parameterAsBool(parameters, 'CREATE_PROJECT', context),
                              'folder_name': column_input(self.parameterAsString(parameters, 'OUTPUT_NAME', context)),
+                             'create_report_zip': self.parameterAsBool(parameters, 'REPORT_ZIP', context),
+                             'report_zip_directory': self.parameterAsString(parameters, 'REPORT_ZIP_DIRECTORY', context),
                              'backup_qgz': self.parameterAsBool(parameters, 'BACKUP', context)}}
         config['basic'] = {key: unpack(value)[0] for key, value in config['drawing_attributes']['land'].items()}
         config['map'] = {
@@ -339,6 +348,8 @@ def parameters_from_dock(dock):
               'TABLE_ORDER': settings['xy_table_order'], 'LOCATION': settings['create_location_map'],
               'LOCATION_PAPER': int(settings['location_paper'] == 'A3'), 'LOCATION_DIRECTION': settings['location_direction'],
               'LOCATION_SCALE': settings['location_scale'], 'CREATE_PROJECT': output['create_qgz'], 'BACKUP': output['backup_qgz']}
+    params['REPORT_ZIP'] = output.get('create_report_zip', False)
+    params['REPORT_ZIP_DIRECTORY'] = output.get('report_zip_directory', '')
     literal, prop = unpack(output.get('folder_name', ''))
     params['OUTPUT_NAME'] = column_value(literal, prop)
     all_items = config['polygons']['items'] + config['lines']['items']
